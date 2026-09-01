@@ -1,4 +1,4 @@
 [submodule "Memtly.Core"]
 	path = Memtly.Core
-	url = ../memtly.core.git
-	branch = master
+	url = https://github.com/devnulluk/Memtly.Core-HEIC-support-.git
+	branch = feature/heic-originals

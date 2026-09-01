@@ -4,6 +4,12 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
 EXPOSE 5000
 
+# HEIC/HEIF decoding support. Originals remain untouched; heif-convert is
+# used only to create browser-compatible derivatives.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libheif-examples && \
+    rm -rf /var/lib/apt/lists/*
+
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG TARGETARCH
 ARG BUILD_CONFIGURATION=Release
