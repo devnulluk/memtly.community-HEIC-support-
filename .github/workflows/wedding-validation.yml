@@ -2,8 +2,6 @@ name: Wedding validation
 on:
   push:
     branches: [feature/wedding-guest-mode]
-  pull_request:
-    branches: [master, feature/heic-originals]
   workflow_dispatch:
 permissions:
   contents: read
@@ -30,9 +28,10 @@ jobs:
           export WEDDING_WEBROOT="$PWD/Memtly.Community/wwwroot"
           dotnet run --no-build --project tests/Wedding.SmokeHost -c Release --urls http://127.0.0.1:5088 > /tmp/wedding-smoke.log 2>&1 &
           host=$!
-          trap 'kill "$host" || true; cat /tmp/wedding-smoke.log' EXIT
+          trap 'kill "$host" || true; tail -100 /tmp/wedding-smoke.log' EXIT
           for attempt in $(seq 1 60); do
             curl -fsS http://127.0.0.1:5088/Wedding/Session >/dev/null && break
+            kill -0 "$host"
             sleep 1
           done
           python3 tests/wedding_smoke.py
@@ -48,3 +47,39 @@ jobs:
       - name: Verify packaged decoder and non-root runtime
         run: |
           docker run --rm --entrypoint sh memtly-wedding:test -c 'test "$(id -u)" != 0; heif-convert --version; test -s /app/wwwroot/wedding/index.html'
+      - name: Start real application and test PNG/HEIC guest uploads
+        run: |
+          docker run -d --name wedding-runtime -p 127.0.0.1:5089:5000 \
+            -e ASPNETCORE_ENVIRONMENT=Development \
+            -e Wedding__Enabled=true -e Wedding__DevelopmentHttp=true \
+            -e Wedding__InviteKey=ci-only-production-image-guest-invitation-12345678 \
+            -e Wedding__StoragePath=/data/wedding \
+            -e Memtly__Force_Https=false \
+            -e Memtly__Account__Admin__Password="CI!$(openssl rand -hex 24)" \
+            -e Memtly__Account__Admin__Email=ci@example.invalid \
+            -e Memtly__Security__Encryption__Key="$(openssl rand -hex 32)" \
+            -e Memtly__Security__Encryption__Salt="$(openssl rand -hex 32)" \
+            -e Memtly__Account__Registration__Enabled=false \
+            -e Memtly__Logging__Graylog__Enabled=false \
+            memtly-wedding:test
+          trap 'docker logs --tail 150 wedding-runtime; docker rm -f wedding-runtime' EXIT
+          python3 tests/production_runtime.py
+          docker cp wedding-runtime:/app/build-manifests artifacts/build-manifests
+          python3 - <<'PY'
+          import json, pathlib
+          manifests = list(pathlib.Path('artifacts/build-manifests').glob('*.json'))
+          assert manifests, 'Missing resolved production dependency manifests'
+          for path in manifests:
+              data = json.loads(path.read_text())
+              for framework, dependencies in data['dependencies'].items():
+                  if 'System.Security.Cryptography.Pkcs' in dependencies:
+                      assert dependencies['System.Security.Cryptography.Pkcs']['resolved'] == '10.0.13'
+                  assert 'SQLitePCLRaw.lib.e_sqlite3' not in dependencies, (path, framework)
+          print('PASS: pinned PKCS replacement and removal of vulnerable inherited SQLite native bundle.')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wedding-validation-evidence
+          path: artifacts/
+          if-no-files-found: ignore
