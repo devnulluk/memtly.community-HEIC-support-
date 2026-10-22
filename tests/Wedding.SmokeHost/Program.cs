@@ -6,10 +6,13 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Options;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    WebRootPath = Environment.GetEnvironmentVariable("WEDDING_WEBROOT") ?? Path.GetFullPath("Memtly.Community/wwwroot")
+});
 var root = Environment.GetEnvironmentVariable("TEST_ROOT") ?? Path.Combine(Path.GetTempPath(), "wedding-smoke-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(Path.Combine(root, "keys"));
-builder.WebHost.UseWebRoot(Environment.GetEnvironmentVariable("WEDDING_WEBROOT") ?? Path.GetFullPath("Memtly.Community/wwwroot"));
 var options = new WeddingOptions { Enabled = true, InviteKey = "test-only-invitation-not-for-deployment-12345", StoragePath = Path.Combine(root, "media"), DevelopmentHttp = true, MaxFileBytes = 1048576 };
 options.Validate();
 builder.Services.AddSingleton(options);

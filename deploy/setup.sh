@@ -24,10 +24,9 @@ MAX_FILE_BYTES=524288000
 MAX_GUEST_BYTES=5368709120
 MAX_TOTAL_BYTES=53687091200
 EOF
-# Keep generated credentials out of Git even when upstream changes .gitignore.
 if [[ -d .git ]]; then
   for entry in '/.env' '/backups/' '/data/'; do grep -qxF "$entry" .git/info/exclude || printf '%s\n' "$entry" >> .git/info/exclude; done
 fi
 printf '\nPrivate guest/QR link (keep the #invite= part):\nhttps://%s/Wedding#invite=%s\n' "$1" "$invite"
-printf '\nCouple’s collection:\nhttps://%s/Wedding/Admin\n\nInitial admin: %s\nInitial password: %s\n' "$1" "$2" "$password"
+printf '\nCouple’s collection:\nhttps://%s/Wedding/Admin\n\nInitial username: admin\nAdministrator email: %s\nInitial password: %s\n' "$1" "$2" "$password"
 printf '\nSecrets are saved in .env (mode 600). Do not commit or share it.\n'

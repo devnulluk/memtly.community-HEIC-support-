@@ -1,5 +1,4 @@
 # syntax=docker/dockerfile:1
-# Build the decoder separately: Noble's stock libheif is too old for some iPhone files.
 FROM ubuntu:24.04 AS heif
 ARG HEIF_VERSION=1.23.1
 ARG HEIF_SHA256=0de0327f60fcd47de90d5654c6fe152232738d60d84fe084ec3e0f35e03b166a
@@ -15,7 +14,6 @@ RUN curl -fL --retry 3 -o heif.tar.gz https://github.com/strukturag/libheif/rele
        -DWITH_LIBDE265=ON -DWITH_LIBDE265_PLUGIN=OFF -DWITH_X265=OFF -DWITH_X264=OFF \
        -DWITH_AOM_DECODER=OFF -DWITH_AOM_ENCODER=OFF -DWITH_DAV1D=OFF -DWITH_RAV1E=OFF -DWITH_SvtEnc=OFF \
     && cmake --build out --parallel 2 && cmake --install out
-# This verifies native HEIC decoding during the image build, not just tool presence.
 RUN LD_LIBRARY_PATH=/opt/heif/lib /opt/heif/bin/heif-convert examples/example.heic /tmp/example.png \
     && find /tmp -maxdepth 1 -name 'example*.png' -size +0c | grep -q .
 
@@ -27,8 +25,13 @@ RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 WORKDIR /src
 COPY . .
+# Verify the inherited graph, then use pinned security overrides in a separate lockfile.
 RUN dotnet restore Memtly.Community/Memtly.Community.csproj --locked-mode
+ENV WeddingSecurityUpdates=true
+RUN dotnet restore Memtly.Community/Memtly.Community.csproj --force-evaluate -p:RestoreLockedMode=false
 RUN dotnet publish Memtly.Community/Memtly.Community.csproj -c Release -o /publish --no-restore /p:UseAppHost=false
+RUN mkdir -p /publish/build-manifests && \
+    find . -name wedding.packages.lock.json -exec sh -c 'cp "$1" "/publish/build-manifests/$(basename "$(dirname "$(dirname "$1")")").packages.lock.json"' sh {} \;
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble AS final
 RUN apt-get update && apt-get install -y --no-install-recommends \

@@ -10,7 +10,7 @@
         Strict-Transport-Security "max-age=31536000"
     }
     request_body {
-        max_size 500MB
+        max_size 524288000
     }
     reverse_proxy memtly:5000
 }
