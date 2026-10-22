@@ -26,13 +26,13 @@ builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(P
 builder.Services.AddAntiforgery(o => { o.HeaderName = "X-Wedding-CSRF"; o.Cookie.IsEssential = true; });
 builder.Services.AddAuthentication("Test").AddScheme<AuthenticationSchemeOptions, TestAuthentication>("Test", _ => { });
 builder.Services.AddAuthorization();
-builder.Services.AddControllers();
+// ValidateAntiForgeryToken is an MVC ViewFeatures filter, not part of AddControllers alone.
+builder.Services.AddControllersWithViews();
 var app = builder.Build();
-app.UseAuthentication(); app.UseAuthorization(); app.MapControllers();
+app.UseStaticFiles(); app.UseAuthentication(); app.UseAuthorization(); app.MapControllers();
 app.Run();
 
 sealed class TestAdmin : IWeddingAdmin { public bool IsAdmin(ClaimsPrincipal user) => user.IsInRole("Admin"); }
-// Intentionally fail conversion: test that failed previews never lose the original.
 sealed class FailedPreview : IWeddingPreview { public Task<bool> Write(string source, string thumbnail) => Task.FromResult(false); }
 sealed class TestAuthentication(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder)
     : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
