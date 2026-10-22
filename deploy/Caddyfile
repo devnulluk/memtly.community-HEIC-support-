@@ -1,0 +1,16 @@
+{
+    email {$ADMIN_EMAIL}
+}
+{$WEDDING_DOMAIN} {
+    encode zstd gzip
+    header {
+        Referrer-Policy "no-referrer"
+        X-Robots-Tag "noindex, nofollow, noarchive"
+        X-Content-Type-Options "nosniff"
+        Strict-Transport-Security "max-age=31536000"
+    }
+    request_body {
+        max_size 500MB
+    }
+    reverse_proxy memtly:5000
+}

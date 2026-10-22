@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#203d30"><title>Share with us · Mark & Keziah</title>
+<link rel="stylesheet" href="/wedding/wedding.css"><script src="/wedding/wedding.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="masthead"><a class="wordmark" href="/Wedding" aria-label="Mark and Keziah, wedding photo postbox">M<span>&</span>K</a><span class="masthead-note">A LITTLE POSTBOX FOR OUR MEMORIES</span><a id="admin-link" href="/Wedding/Admin" hidden>Our collection</a></header>
+<main id="main">
+<section class="hero" aria-labelledby="heading">
+<div class="crest" aria-hidden="true"><span>M</span><i>&</i><span>K</span></div>
+<p class="eyebrow">MARK & KEZIAH · 1 NOVEMBER 2026</p>
+<h1 id="heading">Our day,<br><em>through your eyes.</em></h1>
+<p class="intro">The little moments. The happy tears. The questionable dance moves.<br>We’d love to see the day as you saw it.</p>
+<div class="botanical" aria-hidden="true"><span></span>❧<span></span></div>
+</section>
+<div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+<section id="privacy" class="privacy">
+<p class="eyebrow">SHARE WITH US, BUT PLEASE KEEP IT PRIVATE ♡</p>
+<h2>A little favour from us</h2>
+<p>Please keep photos and videos of the couple and wedding party within your household. Please don’t post, forward or share them with anyone else <strong>until the couple have had a chance to share with the wider world.</strong></p>
+<p class="sign-off">Thank you for helping us keep our day private.<br><em>With love, Mark & Keziah</em></p>
+</section>
+<section id="locked" class="panel locked" hidden><p class="eyebrow">JUST FOR OUR GUESTS</p><h2>Your invitation opens this postbox</h2><p>Please use the private link or scan the QR code from our photo-sharing card. There’s no account to create and no app to install.</p></section>
+<div id="guest" hidden>
+<nav class="tabs" aria-label="Photo postbox"><button id="upload-tab" type="button" aria-pressed="true">Leave us a memory</button><button id="uploads-tab" type="button" aria-pressed="false">Your uploads <span id="count"></span></button></nav>
+<section id="upload-panel" class="panel">
+<div class="panel-heading"><span class="step">01</span><div><h2>Who’s behind the camera?</h2><p>Only if you’d like us to know.</p></div></div>
+<label for="guest-name">What should we call you? <span class="optional">(optional)</span></label>
+<input id="guest-name" type="text" maxlength="80" autocomplete="name" placeholder="Your name, or your family’s name">
+<div class="panel-heading second"><span class="step">02</span><div><h2>Send a little happiness</h2><p>Photos, videos, or a lovely mixture of both.</p></div></div>
+<label id="drop-zone" class="drop-zone" for="files"><span class="upload-symbol" aria-hidden="true">↑</span><strong>Choose your photos & videos</strong><span>or drop them here</span><input id="files" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.heic,.heif,.mp4,.mov,image/heic,image/heif"></label>
+<p class="small centre">No account. No app. Just your memories.<br><span id="file-limit">Up to 500 MB per file.</span> Please keep this page open while files upload.</p>
+<details class="quality-note"><summary>A note about your original photographs</summary><p>We keep the files exactly as your device sends them. HEIC and HEIF are welcome; the gallery uses separate viewing copies. For an unmodified iPhone original, export it to Files and choose that file here — the Photos picker may convert an image before uploading it.</p></details>
+<div id="queue-wrap" hidden><h3>On their way to us</h3><ol id="queue" class="queue"></ol><button id="retry-failed" class="secondary" type="button" hidden>Retry unsuccessful uploads</button></div>
+<div id="thank-you" class="thank-you" role="status" hidden><span aria-hidden="true">♡</span><h2>Safely in our postbox.</h2><p>Thank you for sharing a little of our day with us.</p><button id="view-uploads" type="button">See your uploads</button></div>
+</section>
+</div>
+<section id="collection-panel" hidden>
+<div class="collection-heading"><div><p id="collection-kicker" class="eyebrow">YOUR LITTLE CORNER</p><h2 id="collection-title">The memories you’ve shared</h2></div><button id="refresh" type="button" class="secondary">Refresh</button></div>
+<p id="collection-note" class="small">Only this browser and Mark & Keziah can see these uploads. Clearing cookies or changing devices loses this view, not the photographs you’ve sent us.</p>
+<div id="admin-tools" class="admin-tools" hidden><a class="button" href="/Wedding/Export">Download all originals (ZIP)</a><a class="secondary button" href="/Account">Memtly administration</a><p class="small">Reviewed is a private checklist, not a publishing switch. These photographs are never added to a public guest gallery.</p></div>
+<p id="total" class="small"></p><div id="gallery" class="gallery" aria-live="polite"></div>
+<div id="pagination" class="pagination" hidden><button id="previous" type="button" class="secondary">Previous</button><span id="page-number"></span><button id="next" type="button" class="secondary">Next</button></div>
+</section>
+<section id="admin-denied" class="panel" hidden><h2>Just for the newlyweds</h2><p>Please sign in with a Memtly administrator account to open the wedding collection.</p><a class="button" href="/Account/Login?ReturnUrl=%2FWedding%2FAdmin">Sign in</a></section>
+<footer><div class="botanical" aria-hidden="true"><span></span>❧<span></span></div><p>Every little memory means the world to us.</p><p class="signature">Mark & Keziah</p><p class="small">A private cookie remembers your uploads on this browser.<br>Your name is optional and is shown only with your own uploads and to us.</p><div class="footer-links"><a href="/Wedding/Admin">For the couple</a><a href="https://github.com/devnulluk/memtly.community-HEIC-support-/tree/feature/wedding-guest-mode" rel="noreferrer">Built on Memtly · source</a></div></footer>
+</main>
+<dialog id="viewer"><button id="close-viewer" class="close secondary" type="button" aria-label="Close photograph">×</button><div id="viewer-content"></div><p id="viewer-caption"></p></dialog>
+<noscript><p class="panel">Please enable JavaScript to use the private photo postbox. Your browser needs it to upload files and show progress.</p></noscript>
+</body></html>

@@ -1,0 +1,50 @@
+name: Wedding validation
+on:
+  push:
+    branches: [feature/wedding-guest-mode]
+  pull_request:
+    branches: [master, feature/heic-originals]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  access-and-integrity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Check JavaScript and deployment script
+        run: |
+          node --check Memtly.Community/wwwroot/wedding/wedding.js
+          bash -n deploy/setup.sh
+      - name: Build isolated host using production wedding controller and storage
+        run: dotnet build tests/Wedding.SmokeHost -c Release
+      - name: Run privacy and integrity smoke tests
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+        run: |
+          export TEST_ROOT=$(mktemp -d)
+          export WEDDING_WEBROOT="$PWD/Memtly.Community/wwwroot"
+          dotnet run --no-build --project tests/Wedding.SmokeHost -c Release --urls http://127.0.0.1:5088 > /tmp/wedding-smoke.log 2>&1 &
+          host=$!
+          trap 'kill "$host" || true; cat /tmp/wedding-smoke.log' EXIT
+          for attempt in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:5088/Wedding/Session >/dev/null && break
+            sleep 1
+          done
+          python3 tests/wedding_smoke.py
+  production-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Compile real Community/Core application and build native HEIC decoder
+        run: docker build -f Dockerfile.wedding -t memtly-wedding:test .
+      - name: Verify packaged decoder and non-root runtime
+        run: |
+          docker run --rm --entrypoint sh memtly-wedding:test -c 'test "$(id -u)" != 0; heif-convert --version; test -s /app/wwwroot/wedding/index.html'

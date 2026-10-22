@@ -1,0 +1,69 @@
+name: newland-brown-wedding
+services:
+  memtly:
+    build:
+      context: .
+      dockerfile: Dockerfile.wedding
+    image: newland-brown-memtly:wedding
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Wedding__Enabled: "true"
+      Wedding__InviteKey: ${WEDDING_INVITE_KEY:?Run deploy/setup.sh first}
+      Wedding__StoragePath: /data/wedding
+      Wedding__TrustedProxy: 172.29.147.2
+      Wedding__MaxFileBytes: ${MAX_FILE_BYTES:-524288000}
+      Wedding__MaxGuestBytes: ${MAX_GUEST_BYTES:-5368709120}
+      Wedding__MaxTotalBytes: ${MAX_TOTAL_BYTES:-53687091200}
+      Memtly__Base_Url: https://${WEDDING_DOMAIN:?Set WEDDING_DOMAIN}
+      Memtly__Force_Https: "true"
+      Memtly__Account__Admin__Email: ${ADMIN_EMAIL:?Set ADMIN_EMAIL}
+      Memtly__Account__Admin__Password: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD}
+      Memtly__Account__Registration__Enabled: "false"
+      Memtly__Identity_Check__Enabled: "false"
+      Memtly__Guest_Gallery_Creation: "false"
+      Memtly__Security__Encryption__Key: ${MEMTLY_ENCRYPTION_KEY:?Set MEMTLY_ENCRYPTION_KEY}
+      Memtly__Security__Encryption__Salt: ${MEMTLY_ENCRYPTION_SALT:?Set MEMTLY_ENCRYPTION_SALT}
+      Memtly__Logging__Graylog__Enabled: "false"
+      Memtly__Reports__Email__Enabled: "false"
+      Memtly__Notifications__Smtp__Enabled: "false"
+    volumes:
+      - memtly_config:/app/config
+      - wedding_media:/data/wedding
+    # Only Caddy can reach the application; no public/host port bypass.
+    networks:
+      wedding:
+        ipv4_address: 172.29.147.3
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 3g
+    pids_limit: 256
+    stop_grace_period: 150s
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      WEDDING_DOMAIN: ${WEDDING_DOMAIN:?Set WEDDING_DOMAIN}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?Set ADMIN_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      wedding:
+        ipv4_address: 172.29.147.2
+    depends_on: [memtly]
+volumes:
+  memtly_config:
+  wedding_media:
+  caddy_data:
+  caddy_config:
+networks:
+  wedding:
+    ipam:
+      config:
+        - subnet: 172.29.147.0/24

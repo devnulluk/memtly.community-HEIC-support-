@@ -1,0 +1,15 @@
+.git
+**/.git
+**/bin
+**/obj
+**/node_modules
+.env
+.env.*
+**/.env
+**/.env.*
+data
+backups
+**/config/*.db*
+**/config/*.xml
+*.tar.gz
+*.zip

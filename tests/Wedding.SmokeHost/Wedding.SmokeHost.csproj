@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Memtly.Community/Wedding/WeddingServices.cs" Link="WeddingServices.cs" />
+    <Compile Include="../../Memtly.Community/Wedding/WeddingController.cs" Link="WeddingController.cs" />
+  </ItemGroup>
+</Project>
