@@ -43,12 +43,14 @@ docker cp wedding-test-proxy:/data/caddy/pki/authorities/local/root.crt /tmp/wed
 curl --noproxy '*' --cacert /tmp/wedding-ci-root.crt -fsS https://wedding.test:5443/ >/dev/null
 curl --noproxy '*' --cacert /tmp/wedding-ci-root.crt -fsS https://wedding.test:5443/Account/Login >/dev/null
 python3 tests/social_preview.py --base-url https://wedding.test:5443 --ca-file /tmp/wedding-ci-root.crt | tee artifacts/social-preview-checks.txt
-python3 - <<'PY'
-import struct, zlib, pathlib
-def chunk(name, data): return struct.pack('>I',len(data))+name+data+struct.pack('>I',zlib.crc32(name+data))
-png=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',2,2,8,2,0,0,0))+chunk(b'IDAT',zlib.compress(b'\x00\xff\x00\x00\x00\xff\x00'*2))+chunk(b'IEND',b'')
-pathlib.Path('artifacts/browser-original.png').write_bytes(png)
-PY
+# Use a real PNG encoder and photographic-sized dimensions for the browser
+# authorization test. Successful preview generation remains mandatory; do not
+# substitute an uploaded original or bypass the application preview worker.
+docker run --rm --user "$(id -u):$(id -g)" --entrypoint ffmpeg \
+  -v "$PWD/artifacts:/fixtures" memtly-wedding:test \
+  -hide_banner -loglevel error -f lavfi -i testsrc=size=640x480:rate=1 \
+  -frames:v 1 -c:v png -pix_fmt rgb24 -threads 1 -update 1 \
+  /fixtures/browser-original.png
 docker run --rm --user "$(id -u):$(id -g)" --entrypoint ffmpeg \
   -v "$PWD/artifacts:/fixtures" memtly-wedding:test \
   -hide_banner -loglevel error -f lavfi -i testsrc=size=320x240:rate=24 \
