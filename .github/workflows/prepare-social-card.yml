@@ -1,0 +1,46 @@
+name: Prepare approved social-preview image
+on:
+  push:
+    branches: [feature/wedding-social-preview-asset]
+    paths: ['deploy/social-card-transfer/**', '.github/workflows/prepare-social-card.yml']
+permissions:
+  contents: write
+jobs:
+  image:
+    if: github.ref == 'refs/heads/feature/wedding-social-preview-asset'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/wedding-social-preview-asset
+      - name: Reconstruct verified approved artwork as a standard JPEG
+        run: |
+          python3 -m venv /tmp/social-image-venv
+          /tmp/social-image-venv/bin/pip install --disable-pip-version-check Pillow==12.0.0
+          /tmp/social-image-venv/bin/python - <<'PY'
+          import base64, hashlib, io
+          from pathlib import Path
+          from PIL import Image
+          parts = [p.read_text() for p in sorted(Path('deploy/social-card-transfer').glob('part-*.b64'))]
+          assert len(parts) == 3
+          # Correct the single duplicated pair in the text transport. The full
+          # decoded digest below must still match the prepared approved image.
+          parts[2] = parts[2].replace('Q4NK6uvE1cBjqpawrIcIcTQxXuQ9p1is', 'Q4NK6uvE1cBjqpawrIcTQxXuQ9p1is')
+          data = base64.b64decode(''.join(parts), validate=True)
+          assert hashlib.sha256(data).hexdigest() == 'c34ff30c09fe67bdb9a92da963e57ed53c215070a72bb1479f3ae0154874ebf2'
+          image = Image.open(io.BytesIO(data)).convert('RGB')
+          assert image.size == (1200, 630)
+          output = Path('Memtly.Community/wwwroot/wedding/assets/social-preview-v1.jpg')
+          image.save(output, 'JPEG', quality=92, optimize=True, progressive=False, exif=b'')
+          assert output.stat().st_size < 1000000
+          print(f'Prepared JPEG: {image.size}, {output.stat().st_size} bytes, SHA256 {hashlib.sha256(output.read_bytes()).hexdigest()}')
+          PY
+      - name: Commit only the public preview image to the preparation branch
+        run: |
+          test "$(git branch --show-current)" = feature/wedding-social-preview-asset
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- Memtly.Community/wwwroot/wedding/assets/social-preview-v1.jpg
+          git commit -m 'Prepare approved 1200x630 cherub social card [skip ci]'
+          git push origin HEAD:refs/heads/feature/wedding-social-preview-asset
