@@ -1,0 +1,76 @@
+/* Approved phone/modem cherubs and regenerated botanical artwork.
+   Decorative images never intercept upload controls or overlap readable copy. */
+.hero {
+  min-height: 175px;
+  padding: 12px 145px 10px;
+}
+.hero-floral {
+  width: 120px;
+  height: auto;
+  top: -45px;
+  opacity: 1;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+.hero-floral-left { left: 0; }
+.hero-floral-right { right: 0; transform: scaleX(-1); }
+.privacy {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr) 160px;
+  align-items: center;
+  gap: 16px;
+  max-width: 810px;
+  margin: 26px auto 0;
+  padding: 0;
+}
+.cherub {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+.cherub-phone { grid-column: 1; grid-row: 1; }
+.privacy-copy { grid-column: 2; grid-row: 1; min-width: 0; }
+.cherub-modem { grid-column: 3; grid-row: 1; }
+.cherub-rule { display: none; }
+@media (max-width: 800px) {
+  /* Beside the crest, above the heading: no negative horizontal offsets. */
+  .hero { min-height: 0; padding: 82px 0 6px; }
+  .hero-floral { width: 96px; top: -82px; }
+  .hero-floral-left { left: 0; }
+  .hero-floral-right { right: 0; }
+  .privacy {
+    max-width: 580px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px 16px;
+    margin-top: 21px;
+    padding: 0;
+  }
+  .cherub-phone { grid-column: 1; grid-row: 1; width: 100px; justify-self: start; }
+  .cherub-modem { grid-column: 2; grid-row: 1; width: 110px; justify-self: end; }
+  .privacy-copy { grid-column: 1 / -1; grid-row: 2; }
+  .cherub-rule {
+    display: block;
+    grid-column: 1 / -1;
+    grid-row: 1;
+    justify-self: center;
+    width: 80px;
+    height: 14px;
+    background: url('/wedding/assets/divider-ornate.svg') center / contain no-repeat;
+    pointer-events: none;
+  }
+}
+@media (max-width: 700px) {
+  .hero { padding-top: 60px; }
+  .hero-floral { width: 78px; top: -76px; opacity: 1; }
+}
+@media (max-width: 350px) {
+  .hero { padding-top: 45px; }
+  .hero-floral { width: 64px; top: -74px; opacity: 1; }
+  .cherub-phone { width: 88px; }
+  .cherub-modem { width: 96px; }
+  .cherub-rule { width: 60px; }
+}

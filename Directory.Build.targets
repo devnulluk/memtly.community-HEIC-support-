@@ -1,0 +1,13 @@
+<Project>
+  <!-- The wedding image verifies the upstream lock graph first, then explicitly
+       enables these isolated security overrides for the production graph. -->
+  <PropertyGroup Condition="'$(WeddingSecurityUpdates)' == 'true'">
+    <NuGetLockFilePath>$(MSBuildProjectDirectory)/obj/wedding.packages.lock.json</NuGetLockFilePath>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(WeddingSecurityUpdates)' == 'true'">
+    <PackageReference Remove="System.Security.Cryptography.Pkcs;SQLitePCLRaw.bundle_e_sqlite3" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="[10.0.13]" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="[3.0.5]" />
+  </ItemGroup>
+</Project>

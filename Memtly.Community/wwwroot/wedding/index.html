@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#18372c"><title>Mark &amp; Keziah — Wedding Photos</title>
+<meta name="description" content="Share your memories. Upload your photos and videos from Mark &amp; Keziah’s wedding. No account needed.">
+<link rel="canonical" href="https://wedding-photos.newland-brown.com/">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="en_GB">
+<meta property="og:site_name" content="Mark &amp; Keziah">
+<meta property="og:title" content="Mark &amp; Keziah — Wedding Photos">
+<meta property="og:description" content="Share your memories. Upload your photos and videos from Mark &amp; Keziah’s wedding. No account needed.">
+<meta property="og:url" content="https://wedding-photos.newland-brown.com/">
+<meta property="og:image" content="https://wedding-photos.newland-brown.com/wedding/assets/social-preview-v1.jpg">
+<meta property="og:image:secure_url" content="https://wedding-photos.newland-brown.com/wedding/assets/social-preview-v1.jpg">
+<meta property="og:image:type" content="image/jpeg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Mark &amp; Keziah — Wedding Photos. White roses, a wreath monogram and a cheeky cherub taking a photo with a phone.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Mark &amp; Keziah — Wedding Photos">
+<meta name="twitter:description" content="Share your memories. Upload your photos and videos from Mark &amp; Keziah’s wedding. No account needed.">
+<meta name="twitter:image" content="https://wedding-photos.newland-brown.com/wedding/assets/social-preview-v1.jpg">
+<meta name="twitter:image:alt" content="Mark &amp; Keziah — Wedding Photos. White roses, a wreath monogram and a cheeky cherub taking a photo with a phone.">
+<link rel="stylesheet" href="/wedding/wedding.css?v=design-2">
+<link rel="stylesheet" href="/wedding/approved-artwork.css?v=cherubs-1">
+<script src="/wedding/wedding.js?v=owner-privacy-1" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="masthead">
+<a class="brand" href="/" aria-label="Mark and Keziah, wedding photos"><img src="/wedding/assets/monogram.webp" width="140" height="140" alt="Mark and Keziah monogram"></a>
+<a id="admin-link" class="admin-link" href="/Wedding/Admin" hidden>Our collection</a>
+</header>
+<main id="main">
+<section class="hero" aria-labelledby="heading">
+<img class="hero-floral hero-floral-left" src="/wedding/assets/approved-flowers.webp" width="180" height="291" alt="" aria-hidden="true">
+<img class="hero-floral hero-floral-right" src="/wedding/assets/approved-flowers.webp" width="180" height="291" alt="" aria-hidden="true">
+<p class="eyebrow">Mark & Keziah · 1 November 2026</p>
+<h1 id="heading">Our day,<br><em>through your eyes.</em></h1>
+<div class="ornament" aria-hidden="true"></div>
+</section>
+<div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+<section id="locked" class="panel locked" hidden><h2>Your invitation opens this page</h2><p>Please use your invitation link or QR code.</p></section>
+<div id="guest" hidden>
+<nav class="tabs" aria-label="Wedding photos"><button id="upload-tab" type="button" aria-pressed="true">Upload</button><button id="uploads-tab" type="button" aria-pressed="false">Your uploads <span id="count"></span></button></nav>
+<p id="closed-message" class="notice" role="status" hidden>Uploads are closed. Thank you for sharing our day.</p>
+<section id="upload-panel" class="panel">
+<label for="guest-name">Your name <span class="optional">(optional)</span></label>
+<input id="guest-name" type="text" maxlength="80" autocomplete="name" aria-describedby="name-note" placeholder="Your name or family name">
+<p id="name-note" class="small name-note">Your name is just for Mark & Keziah.</p>
+<label id="drop-zone" class="drop-zone" for="files"><span class="upload-symbol" aria-hidden="true">↑</span><strong>Choose photos & videos</strong><span>or drop them here</span><input id="files" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.heic,.heif,.mp4,.mov,image/heic,image/heif" aria-describedby="sharing-note upload-help"></label>
+<p id="sharing-note" class="small centre">Only you, in this browser, and the couple can view your uploads.</p>
+<p id="upload-help" class="small centre">No account needed. Keep this page open while uploading.</p>
+<details class="quality-note"><summary>About your files</summary><p><span id="file-limit">Original files welcome.</span> We keep what your device sends, unchanged. For an unmodified iPhone original, choose it from Files; the Photos picker may convert it first. Video previews show up to two minutes. Keep your screen awake for large uploads.</p><p id="identity-note">An essential cookie remembers this browser. A different device or cleared cookies starts a new collection; the couple still keeps your earlier uploads.</p></details>
+<div id="queue-wrap" hidden><h2 class="queue-title">Your uploads</h2><ol id="queue" class="queue"></ol><button id="retry-failed" class="secondary" type="button" hidden>Retry unsuccessful uploads</button></div>
+<div id="thank-you" class="thank-you" role="status" hidden><h2>Thank you ♡</h2><p>Your memories are safely with us.</p><button id="view-uploads" type="button">View your uploads</button></div>
+</section>
+</div>
+<section id="collection-panel" hidden>
+<div class="collection-heading"><div><p id="collection-kicker" class="eyebrow">Our day, together</p><h2 id="collection-title">Your uploads</h2></div><button id="refresh" type="button" class="secondary">Refresh</button></div>
+<p id="collection-note" class="small">Visible to this browser and the couple.</p>
+<div id="admin-tools" class="admin-tools" hidden>
+<div class="admin-actions"><a class="button" href="/Wedding/Export">Download all originals</a><a class="secondary button" href="/Account">Account</a></div>
+<div class="admin-actions"><button id="toggle-uploads" class="secondary" type="button">Close uploads</button><button id="toggle-gallery" class="secondary" type="button">Close guest previews</button></div>
+<p id="settings-status" class="small" role="status"></p>
+</div>
+<p id="total" class="small"></p><div id="gallery" class="gallery" aria-live="polite"></div>
+<div id="pagination" class="pagination" hidden><button id="previous" type="button" class="secondary">Previous</button><span id="page-number"></span><button id="next" type="button" class="secondary">Next</button></div>
+</section>
+<section id="admin-denied" class="panel" hidden><h2>For the couple</h2><p>Please sign in to see the collection.</p><a class="button" href="/Account/Login?ReturnUrl=%2FWedding%2FAdmin">Sign in</a></section>
+<aside id="privacy" class="privacy">
+<img class="cherub cherub-phone" src="/wedding/assets/cherub-phone.webp" width="240" height="254" alt="" aria-hidden="true">
+<div class="cherub-rule" aria-hidden="true"></div>
+<div class="privacy-copy">
+<h2>Share with us. Keep it private.</h2>
+<p>Please keep photos and videos of us and our wedding party within your household. Don’t post, forward or share them until we’ve had a chance to share with the wider world.</p>
+</div>
+<img class="cherub cherub-modem" src="/wedding/assets/cherub-modem.webp" width="260" height="244" alt="" aria-hidden="true">
+</aside>
+<footer><p class="signature">With love, Mark & Keziah</p><div class="footer-links"><a href="https://wedding.newland-brown.com/" rel="noreferrer">Our wedding</a><a href="/Wedding/Admin">For the couple</a><a href="https://github.com/devnulluk/memtly.community-HEIC-support-/tree/feature/wedding-guest-mode" rel="noreferrer">Memtly · source</a></div></footer>
+</main>
+<dialog id="viewer"><button id="close-viewer" class="close secondary" type="button" aria-label="Close photograph">×</button><div id="viewer-content"></div><p id="viewer-caption"></p></dialog>
+<noscript><p class="panel">Please enable JavaScript to upload your photos and videos.</p></noscript>
+</body></html>
