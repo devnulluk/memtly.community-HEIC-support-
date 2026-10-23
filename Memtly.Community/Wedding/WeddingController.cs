@@ -79,6 +79,11 @@ public sealed class WeddingController(WeddingStore store, WeddingSession session
 {
     private bool Admin => administrator.IsAdmin(User);
     private string? Owner => session.Owner(HttpContext);
+    private bool SharedGallery => publicOptions.Enabled && publicOptions.SharedGallery;
+    // One policy for both listings and direct photo/video URLs. Open registration
+    // of anonymous upload sessions must not imply cross-browser media access.
+    private bool GuestCanSee(WeddingItem item, string owner) =>
+        !item.Hidden && (SharedGallery || item.Owner == owner);
     private IActionResult Page() => PhysicalFile(Path.Combine(environment.WebRootPath, "wedding", "index.html"), "text/html; charset=utf-8");
 
     [HttpGet("")]
@@ -94,7 +99,7 @@ public sealed class WeddingController(WeddingStore store, WeddingSession session
         var settings = publicState.Read();
         return Json(new
         {
-            invited, admin = Admin, publicAccess = publicOptions.Enabled,
+            invited, admin = Admin, publicAccess = publicOptions.Enabled, sharedGallery = SharedGallery,
             uploadsOpen = settings.UploadsOpen, galleryOpen = settings.GalleryOpen,
             csrf = antiforgery.GetAndStoreTokens(HttpContext).RequestToken,
             maxFileBytes = options.MaxFileBytes, videoPreviewSeconds = 120
@@ -112,7 +117,8 @@ public sealed class WeddingController(WeddingStore store, WeddingSession session
         if (owner == null) return StatusCode(403, new { error = "Please open the wedding homepage and allow its essential cookie." });
         if (publicOptions.Enabled)
         {
-            var items = publicState.Read().GalleryOpen ? store.All().Where(i => !i.Hidden) : Enumerable.Empty<WeddingItem>();
+            var items = publicState.Read().GalleryOpen
+                ? store.All().Where(i => GuestCanSee(i, owner)) : Enumerable.Empty<WeddingItem>();
             return Listing(items, page, guest: true);
         }
         return Listing(store.All().Where(i => i.Owner == owner), page, guest: false);
@@ -127,13 +133,13 @@ public sealed class WeddingController(WeddingStore store, WeddingSession session
         var settings = publicState.Read();
         page = Math.Clamp(page, 0, 100000);
         return Json(new { total = items.Count, page, pages = (items.Count + 35) / 36,
-            uploadsOpen = settings.UploadsOpen, galleryOpen = settings.GalleryOpen,
+            uploadsOpen = settings.UploadsOpen, galleryOpen = settings.GalleryOpen, sharedGallery = SharedGallery,
             items = items.Skip(page * 36).Take(36).Select(i => guest ? GuestItem(i) : PrivateItem(i)) });
     }
     private object GuestItem(WeddingItem i) => new
     {
         id = i.Id, filename = i.IsVideo ? "Wedding video" : "Wedding photo",
-        name = i.ShareName ? i.Name : "", uploadedUtc = i.UploadedUtc,
+        name = !SharedGallery || i.ShareName ? i.Name : "", uploadedUtc = i.UploadedUtc,
         preview = i.IsVideo ? i.VideoPreview : i.Preview, video = i.IsVideo
     };
     private object PrivateItem(WeddingItem i) => new { id = i.Id, filename = i.Filename, name = i.Name, bytes = i.Bytes,
@@ -164,7 +170,7 @@ public sealed class WeddingController(WeddingStore store, WeddingSession session
                 length = bytes;
             }
             var item = await store.Save(Request.Body, filename, name, owner, id, length, HttpContext.RequestAborted);
-            if (publicOptions.Enabled && Request.Headers["X-Share-Name"] == "true" && !item.ShareName)
+            if (SharedGallery && Request.Headers["X-Share-Name"] == "true" && !item.ShareName)
                 item = store.Update(item.Id, i => i with { ShareName = true });
             return Json(new { success = true, item = PrivateItem(item) });
         }
@@ -186,7 +192,8 @@ public sealed class WeddingController(WeddingStore store, WeddingSession session
         var item = store.Find(id);
         if (item == null) return null;
         if (admin) return item;
-        if (publicOptions.Enabled) return publicState.Read().GalleryOpen && !item.Hidden ? item : null;
+        if (publicOptions.Enabled)
+            return publicState.Read().GalleryOpen && GuestCanSee(item, owner!) ? item : null;
         return item.Owner == owner ? item : null;
     }
 

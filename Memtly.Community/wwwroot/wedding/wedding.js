@@ -26,8 +26,9 @@
     $('files').disabled = !state.uploadsOpen;
     $('guest-name').disabled = !state.uploadsOpen;
     $('toggle-uploads').textContent = state.uploadsOpen ? 'Close uploads' : 'Reopen uploads';
-    $('toggle-gallery').textContent = state.galleryOpen ? 'Close shared gallery' : 'Reopen shared gallery';
-    $('settings-status').textContent = `Uploads: ${state.uploadsOpen ? 'open' : 'closed'} · Gallery: ${state.galleryOpen ? 'open' : 'closed'}`;
+    const label = state.sharedGallery ? 'shared gallery' : 'guest previews';
+    $('toggle-gallery').textContent = `${state.galleryOpen ? 'Close' : 'Reopen'} ${label}`;
+    $('settings-status').textContent = `Uploads: ${state.uploadsOpen ? 'open' : 'closed'} · ${state.sharedGallery ? 'Shared gallery' : 'Private guest previews'}: ${state.galleryOpen ? 'open' : 'closed'}`;
   }
   function tab(uploads) {
     collectionOpen = uploads;
@@ -46,15 +47,16 @@
       if (invitation && !state.publicAccess) { await api('Enter', { token: invitation }); state = await api('Session'); }
       $('admin-link').hidden = !state.admin;
       $('file-limit').textContent = state.maxFileBytes > 0 ? `Up to ${size(state.maxFileBytes)} per file.` : 'Original files welcome.';
-      $('sharing-note').hidden = !state.publicAccess;
-      $('name-note').textContent = state.publicAccess ? 'Shown with your uploads; leave blank to stay anonymous.' : 'Only the couple sees your name.';
+      $('sharing-note').textContent = state.sharedGallery ? 'Viewing copies appear in the shared gallery.' : 'Only you, in this browser, and the couple can view your uploads.';
+      $('name-note').textContent = state.sharedGallery ? 'Shown with your uploads; leave blank to stay anonymous.' : 'Your name is just for Mark & Keziah.';
+      $('identity-note').hidden = !!state.sharedGallery;
       settingsUI();
       if (adminMode) {
         $('privacy').hidden = true;
         $('heading').textContent = 'Our collection';
         $('collection-title').textContent = 'Our wedding collection';
         $('collection-kicker').textContent = 'MARK & KEZIAH';
-        $('collection-note').textContent = state.publicAccess ? 'Shared previews; private originals. Hide items without deleting them.' : 'All uploads and their original files.';
+        $('collection-note').textContent = state.sharedGallery ? 'Shared previews; private originals. Hide items without deleting them.' : 'All guest uploads. Guests can only see their own; this collection is administrator-only.';
         $('admin-tools').hidden = !state.admin;
         $('collection-panel').hidden = !state.admin;
         $('admin-denied').hidden = state.admin;
@@ -62,12 +64,10 @@
       } else {
         $('guest').hidden = !state.invited;
         $('locked').hidden = state.invited;
-        if (!state.publicAccess) {
-          $('uploads-tab').replaceChildren(document.createTextNode('Your uploads '), $('count'));
-          $('view-uploads').textContent = 'View your uploads';
-          $('collection-title').textContent = 'Your uploads';
-          $('collection-note').textContent = 'Visible to this browser and the couple.';
-        }
+        $('uploads-tab').replaceChildren(document.createTextNode(state.sharedGallery ? 'Gallery ' : 'Your uploads '), $('count'));
+        $('view-uploads').textContent = state.sharedGallery ? 'View gallery' : 'View your uploads';
+        $('collection-title').textContent = state.sharedGallery ? 'Wedding gallery' : 'Your uploads';
+        $('collection-note').textContent = state.sharedGallery ? 'Shared viewing copies. Originals are kept for the couple.' : 'Visible to this browser and the couple.';
         if (state.invited) {
           try { $('guest-name').value = localStorage.getItem('wedding-optional-name') || ''; } catch (_) {}
           await load();
@@ -107,7 +107,7 @@
       xhr.setRequestHeader('X-Wedding-CSRF', state.csrf);
       xhr.setRequestHeader('X-File-Name', encodeURIComponent(item.file.name));
       xhr.setRequestHeader('X-Guest-Name', encodeURIComponent(item.name));
-      xhr.setRequestHeader('X-Share-Name', String(!!state.publicAccess));
+      xhr.setRequestHeader('X-Share-Name', String(!!state.sharedGallery));
       xhr.setRequestHeader('X-Upload-ID', item.id);
       xhr.setRequestHeader('X-File-Size', String(item.file.size));
       xhr.timeout = 0;
@@ -161,7 +161,8 @@
   $('previous').addEventListener('click', () => { if (page > 0) { page--; load(); } });
   $('next').addEventListener('click', () => { if (page + 1 < pages) { page++; load(); } });
   async function toggleSetting(key) {
-    if (!confirm(`${state[key] ? 'Close' : 'Reopen'} ${key === 'uploadsOpen' ? 'new uploads' : 'the shared guest gallery'}?`)) return;
+    const label = key === 'uploadsOpen' ? 'new uploads' : state.sharedGallery ? 'the shared guest gallery' : 'guest previews (each browser’s own uploads only)';
+    if (!confirm(`${state[key] ? 'Close' : 'Reopen'} ${label}?`)) return;
     try {
       const result = await api('PublicSettings', { uploadsOpen: state.uploadsOpen, galleryOpen: state.galleryOpen, [key]: !state[key] });
       Object.assign(state, result); settingsUI();
@@ -204,7 +205,7 @@
         b.addEventListener('click', async () => { try { await api(path + '/' + item.id, body); await load(); } catch (error) { notify(error.message); } }); article.append(b);
       };
       action(item.reviewed ? '✓ Reviewed · undo' : 'Mark reviewed', 'Review', { reviewed: !item.reviewed });
-      if (state.publicAccess) action(item.hidden ? 'Hidden · show in gallery' : 'Hide from gallery', 'Visibility', { hidden: !item.hidden });
+      if (state.publicAccess) action(item.hidden ? 'Hidden · show to guest' : 'Hide from guest view', 'Visibility', { hidden: !item.hidden });
       if (item.preview === 'unavailable') action('Try preview again', 'Retry', {});
     }
     return article;
@@ -214,11 +215,13 @@
     if (!state || (!state.invited && !adminMode)) return;
     try {
       const data = await api((adminMode ? 'AdminItems' : 'Items') + '?page=' + page);
+      state.uploadsOpen = data.uploadsOpen; state.galleryOpen = data.galleryOpen;
+      settingsUI();
       pages = data.pages;
       $('count').textContent = data.total ? `(${data.total})` : '';
       $('total').textContent = `${data.total} ${data.total === 1 ? 'memory' : 'memories'}`;
       $('gallery').replaceChildren(...data.items.map(card));
-      if (!data.total) $('gallery').append(make('p', !adminMode && state.publicAccess && !state.galleryOpen ? 'The gallery is currently closed.' : 'Be the first to share a memory.', 'empty'));
+      if (!data.total) $('gallery').append(make('p', !adminMode && state.publicAccess && !state.galleryOpen ? 'Guest previews are currently closed.' : 'Your uploads will appear here.', 'empty'));
       $('pagination').hidden = pages < 2;
       $('page-number').textContent = `Page ${page + 1} of ${pages}`;
       $('previous').disabled = page === 0; $('next').disabled = page + 1 >= pages;

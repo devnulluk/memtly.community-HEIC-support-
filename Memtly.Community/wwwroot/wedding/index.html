@@ -25,7 +25,7 @@
 <meta name="twitter:image:alt" content="Mark &amp; Keziah — Wedding Photos. White roses, a wreath monogram and a cheeky cherub taking a photo with a phone.">
 <link rel="stylesheet" href="/wedding/wedding.css?v=design-2">
 <link rel="stylesheet" href="/wedding/approved-artwork.css?v=cherubs-1">
-<script src="/wedding/wedding.js?v=design-2" defer></script>
+<script src="/wedding/wedding.js?v=owner-privacy-1" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -44,26 +44,26 @@
 <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
 <section id="locked" class="panel locked" hidden><h2>Your invitation opens this page</h2><p>Please use your invitation link or QR code.</p></section>
 <div id="guest" hidden>
-<nav class="tabs" aria-label="Wedding photos"><button id="upload-tab" type="button" aria-pressed="true">Upload</button><button id="uploads-tab" type="button" aria-pressed="false">Gallery <span id="count"></span></button></nav>
+<nav class="tabs" aria-label="Wedding photos"><button id="upload-tab" type="button" aria-pressed="true">Upload</button><button id="uploads-tab" type="button" aria-pressed="false">Your uploads <span id="count"></span></button></nav>
 <p id="closed-message" class="notice" role="status" hidden>Uploads are closed. Thank you for sharing our day.</p>
 <section id="upload-panel" class="panel">
 <label for="guest-name">Your name <span class="optional">(optional)</span></label>
 <input id="guest-name" type="text" maxlength="80" autocomplete="name" aria-describedby="name-note" placeholder="Your name or family name">
-<p id="name-note" class="small name-note">Shown with your uploads; leave blank to stay anonymous.</p>
+<p id="name-note" class="small name-note">Your name is just for Mark & Keziah.</p>
 <label id="drop-zone" class="drop-zone" for="files"><span class="upload-symbol" aria-hidden="true">↑</span><strong>Choose photos & videos</strong><span>or drop them here</span><input id="files" type="file" multiple accept=".jpg,.jpeg,.png,.webp,.heic,.heif,.mp4,.mov,image/heic,image/heif" aria-describedby="sharing-note upload-help"></label>
-<p id="sharing-note" class="small centre">Viewing copies appear in the shared gallery.</p>
+<p id="sharing-note" class="small centre">Only you, in this browser, and the couple can view your uploads.</p>
 <p id="upload-help" class="small centre">No account needed. Keep this page open while uploading.</p>
-<details class="quality-note"><summary>About your files</summary><p><span id="file-limit">Original files welcome.</span> We keep what your device sends, unchanged. For an unmodified iPhone original, choose it from Files; the Photos picker may convert it first. Video previews show up to two minutes. Keep your screen awake for large uploads.</p></details>
+<details class="quality-note"><summary>About your files</summary><p><span id="file-limit">Original files welcome.</span> We keep what your device sends, unchanged. For an unmodified iPhone original, choose it from Files; the Photos picker may convert it first. Video previews show up to two minutes. Keep your screen awake for large uploads.</p><p id="identity-note">An essential cookie remembers this browser. A different device or cleared cookies starts a new collection; the couple still keeps your earlier uploads.</p></details>
 <div id="queue-wrap" hidden><h2 class="queue-title">Your uploads</h2><ol id="queue" class="queue"></ol><button id="retry-failed" class="secondary" type="button" hidden>Retry unsuccessful uploads</button></div>
-<div id="thank-you" class="thank-you" role="status" hidden><h2>Thank you ♡</h2><p>Your memories are safely with us.</p><button id="view-uploads" type="button">View gallery</button></div>
+<div id="thank-you" class="thank-you" role="status" hidden><h2>Thank you ♡</h2><p>Your memories are safely with us.</p><button id="view-uploads" type="button">View your uploads</button></div>
 </section>
 </div>
 <section id="collection-panel" hidden>
-<div class="collection-heading"><div><p id="collection-kicker" class="eyebrow">Our day, together</p><h2 id="collection-title">Wedding gallery</h2></div><button id="refresh" type="button" class="secondary">Refresh</button></div>
-<p id="collection-note" class="small">Shared viewing copies. Originals are kept for the couple.</p>
+<div class="collection-heading"><div><p id="collection-kicker" class="eyebrow">Our day, together</p><h2 id="collection-title">Your uploads</h2></div><button id="refresh" type="button" class="secondary">Refresh</button></div>
+<p id="collection-note" class="small">Visible to this browser and the couple.</p>
 <div id="admin-tools" class="admin-tools" hidden>
 <div class="admin-actions"><a class="button" href="/Wedding/Export">Download all originals</a><a class="secondary button" href="/Account">Account</a></div>
-<div class="admin-actions"><button id="toggle-uploads" class="secondary" type="button">Close uploads</button><button id="toggle-gallery" class="secondary" type="button">Close shared gallery</button></div>
+<div class="admin-actions"><button id="toggle-uploads" class="secondary" type="button">Close uploads</button><button id="toggle-gallery" class="secondary" type="button">Close guest previews</button></div>
 <p id="settings-status" class="small" role="status"></p>
 </div>
 <p id="total" class="small"></p><div id="gallery" class="gallery" aria-live="polite"></div>

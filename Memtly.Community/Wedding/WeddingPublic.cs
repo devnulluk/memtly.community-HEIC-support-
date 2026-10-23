@@ -6,9 +6,11 @@ namespace Memtly.Community.Wedding;
 
 public sealed class WeddingPublicOptions
 {
-    // This wedding branch now defaults to the public root experience.
-    // Set WeddingPublic__Enabled=false to retain invitation-only/owner-only access.
+    // Open, account-free uploads and cross-browser gallery sharing are separate.
+    // Existing deployments default to per-browser viewing, even when their
+    // persisted GalleryOpen switch is true. Sharing requires an explicit opt-in.
     public bool Enabled { get; set; } = true;
+    public bool SharedGallery { get; set; } = false;
     public bool UploadsOpen { get; set; } = true;
     public bool GalleryOpen { get; set; } = true;
     public int UploadsPerBrowserPerMinute { get; set; } = 60;

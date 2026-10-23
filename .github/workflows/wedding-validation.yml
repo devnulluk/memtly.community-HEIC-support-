@@ -25,15 +25,16 @@ jobs:
         run: dotnet run --project tests/Wedding.FeatureTests -c Release
       - name: Build isolated host using production wedding controllers and storage
         run: dotnet build tests/Wedding.SmokeHost -c Release
-      - name: Test invitation compatibility and public-mode authorization/throttling
+      - name: Test invitation, open owner-only and explicitly shared access modes
         env:
           ASPNETCORE_ENVIRONMENT: Development
         run: |
           export WEDDING_WEBROOT="$PWD/Memtly.Community/wwwroot"
-          for mode in private public; do
+          for mode in private public shared; do
             export TEST_ROOT=$(mktemp -d)
-            export TEST_PUBLIC=false
-            test "$mode" != public || export TEST_PUBLIC=true
+            export TEST_PUBLIC=false TEST_SHARED=false
+            test "$mode" = private || export TEST_PUBLIC=true
+            test "$mode" != shared || export TEST_SHARED=true
             dotnet run --no-build --project tests/Wedding.SmokeHost -c Release --urls http://127.0.0.1:5088 > /tmp/wedding-smoke.log 2>&1 &
             host=$!
             trap 'kill "$host" || true; tail -100 /tmp/wedding-smoke.log' EXIT
@@ -99,7 +100,7 @@ jobs:
                       assert dependencies['System.Security.Cryptography.Pkcs']['resolved'] == '10.0.13'
                   assert 'SQLitePCLRaw.lib.e_sqlite3' not in dependencies
           PY
-      - name: Production HTTPS, wedding design and real-browser public upload/admin/video/restart tests
+      - name: Production HTTPS, browser ownership isolation, social preview and restart tests
         run: tests/run_public_runtime.sh
       - uses: actions/upload-artifact@v4
         if: always()

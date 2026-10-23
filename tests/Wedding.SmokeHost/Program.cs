@@ -18,6 +18,7 @@ options.Validate();
 var publicOptions = new WeddingPublicOptions
 {
     Enabled = Environment.GetEnvironmentVariable("TEST_PUBLIC") == "true",
+    SharedGallery = Environment.GetEnvironmentVariable("TEST_SHARED") == "true",
     UploadsPerBrowserPerMinute = 3, UploadsPerIpPerMinute = 6
 };
 builder.Services.AddSingleton(options);
@@ -38,8 +39,7 @@ builder.Services.AddControllersWithViews();
 var app = builder.Build();
 app.Use(async (context, next) => { if (context.Request.Path == "/") context.Request.Path = "/Wedding"; await next(); });
 app.UseStaticFiles();
-// Explicit routing after the rewrite mirrors the real Startup pipeline. Without
-// this, minimal hosting inserts routing before our middleware and root stays 404.
+// Explicit routing after the rewrite mirrors the real Startup pipeline.
 app.UseRouting();
 app.UseAuthentication(); app.UseAuthorization(); app.MapControllers();
 app.Run();

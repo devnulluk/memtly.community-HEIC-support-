@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""TEST-ONLY host: public gallery, control authorization, private originals and rate limits."""
+"""TEST-ONLY: open uploads, owner-only default, explicit sharing, media access and limits."""
 import base64, hashlib, http.cookiejar, json, os, pathlib, urllib.error, urllib.parse, urllib.request, uuid
 BASE = 'http://127.0.0.1:5088'
+SHARED = os.environ.get('TEST_SHARED') == 'true'
 PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=')
 class Client:
     def __init__(self, admin=False):
@@ -32,15 +33,19 @@ class Client:
 
 alice, bob, admin = Client(), Client(), Client(True)
 status, body, headers = alice.request('/'); assert status == 200 and b'through your eyes' in body and not headers.get('Location')
-assert alice.session()['publicAccess'] and bob.session()['invited']
+a_session, b_session = alice.session(), bob.session()
+assert a_session['publicAccess'] and b_session['invited']
+assert a_session['sharedGallery'] is SHARED
 assert all(c.value not in [b.value for b in bob.jar] for c in alice.jar if c.name == 'NewlandBrownGuestDev')
 admin.session()
 status, body, _ = alice.upload(); assert status == 200, (status, body)
 item = json.loads(body)['item']; ident = item['id']
 assert item['sha256'] == hashlib.sha256(PNG).hexdigest()
-shared = bob.items(); assert len(shared) == 1 and shared[0]['name'] == 'Guest One'
-assert all(k not in shared[0] for k in ['owner','requestId','sha256','bytes','notification'])
-assert shared[0]['filename'] != 'private-filename.png'
+assert len(alice.items()) == 1 and alice.items()[0]['name'] == 'Guest One'
+assert len(bob.items()) == (1 if SHARED else 0)
+visible = alice.items()[0]
+assert all(k not in visible for k in ['owner','requestId','sha256','bytes','notification'])
+assert visible['filename'] != 'private-filename.png'
 assert bob.request('/Wedding/Original/' + ident)[0] in (401,403)
 assert bob.request('/Wedding/Export')[0] in (401,403)
 assert bob.request('/Wedding/AdminItems')[0] in (401,403)
@@ -48,33 +53,60 @@ assert bob.request('/Wedding/PublicSettings', {'uploadsOpen':False,'galleryOpen'
 assert alice.upload(csrf=False)[0] == 400
 assert alice.upload(headers={'Origin':'https://evil.example'})[0] == 403
 assert alice.upload(headers={'Sec-Fetch-Site':'cross-site'})[0] == 403
-# Install a tiny viewing fixture to exercise route access separately from decoding.
+# The background test preview worker intentionally fails. Stop its retry path
+# by installing a ready fixture, then exercise access independently of decoding.
 folder = pathlib.Path(os.environ['TEST_ROOT']) / 'media' / ident
 manifest = json.loads((folder/'upload.json').read_text()); manifest['Preview'] = 'ready'
 (folder/'preview.webp').write_bytes(b'RIFF1234WEBP-test-viewing-copy')
 (folder/'upload.json').write_text(json.dumps(manifest))
-assert bob.request('/Wedding/Preview/' + ident)[0] == 200
+assert alice.request('/Wedding/Preview/' + ident)[0] == 200
+assert bob.request('/Wedding/Preview/' + ident)[0] == (200 if SHARED else 404)
+assert bob.request('/Wedding/Preview/' + ident, headers={'Range':'bytes=0-4'})[0] == (200 if SHARED else 404)
+assert Client().request('/Wedding/Preview/' + ident)[0] == 404
+if not SHARED:
+    # A submitted owner/name parameter and old name-sharing consent never grant access.
+    assert json.loads(bob.request('/Wedding/Items?owner=' + manifest['Owner'])[1])['total'] == 0
+    assert bob.request('/Wedding/Preview/' + ident, headers={'X-Guest-Name':'Guest One','X-Owner':manifest['Owner']})[0] == 404
+    manifest['ShareName'] = True; (folder/'upload.json').write_text(json.dumps(manifest))
+    assert bob.items() == [] and bob.request('/Wedding/Preview/' + ident)[0] == 404
 assert admin.request('/Wedding/Visibility/' + ident, {'hidden':True})[0] == 200
-assert bob.items() == [] and bob.request('/Wedding/Preview/' + ident)[0] == 404
+assert alice.items() == [] and bob.items() == []
+assert alice.request('/Wedding/Preview/' + ident)[0] == 404
+assert bob.request('/Wedding/Preview/' + ident)[0] == 404
 assert admin.request('/Wedding/Original/' + ident)[1] == PNG
 assert admin.request('/Wedding/Visibility/' + ident, {'hidden':False})[0] == 200
-# A legacy name was never consented for the public gallery.
+# Legacy names remain private in the explicitly shared mode.
 manifest = json.loads((folder/'upload.json').read_text()); manifest['ShareName'] = False
 (folder/'upload.json').write_text(json.dumps(manifest))
-assert bob.items()[0]['name'] == ''
+if SHARED: assert bob.items()[0]['name'] == ''
+else: assert alice.items()[0]['name'] == 'Guest One' and bob.items() == []
 video = b'\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom' + bytes(128)
 status, body, _ = alice.upload(video, 'private-video.mp4'); assert status == 200
 video_id = json.loads(body)['item']['id']
 assert alice.request('/Wedding/Video/' + video_id)[0] == 404
 assert bob.request('/Wedding/Video/' + video_id)[0] == 404
 assert admin.request('/Wedding/Original/' + video_id)[1] == video
+vf = pathlib.Path(os.environ['TEST_ROOT']) / 'media' / video_id
+vm = json.loads((vf/'upload.json').read_text()); vm['VideoPreview'] = 'ready'
+preview = b'separate-video-preview-fixture'
+(vf/'preview.video.mp4').write_bytes(preview); (vf/'upload.json').write_text(json.dumps(vm))
+assert alice.request('/Wedding/Video/' + video_id)[1] == preview
+assert bob.request('/Wedding/Video/' + video_id)[0] == (200 if SHARED else 404)
+assert bob.request('/Wedding/Video/' + video_id, headers={'Range':'bytes=0-3'})[0] == (206 if SHARED else 404)
+assert Client().request('/Wedding/Video/' + video_id)[0] == 404
 assert admin.request('/Wedding/PublicSettings', {'uploadsOpen':False,'galleryOpen':True})[0] == 200
 assert alice.upload()[0] == 403
-assert len(bob.items()) == 2
+assert len(alice.items()) == 2 and len(bob.items()) == (2 if SHARED else 0)
 assert json.loads((pathlib.Path(os.environ['TEST_ROOT'])/'media'/'.public-settings.json').read_text())['UploadsOpen'] is False
 assert admin.request('/Wedding/PublicSettings', {'uploadsOpen':True,'galleryOpen':False})[0] == 200
-assert bob.items() == [] and bob.request('/Wedding/Preview/' + ident)[0] == 404
+assert alice.items() == [] and bob.items() == []
+assert alice.request('/Wedding/Preview/' + ident)[0] == 404
+assert alice.request('/Wedding/Video/' + video_id)[0] == 404
+assert admin.request('/Wedding/Video/' + video_id)[1] == preview
 assert admin.request('/Wedding/PublicSettings', {'uploadsOpen':True,'galleryOpen':True})[0] == 200
+# Opening guest previews does not enable sharing, including for legacy uploads.
+assert alice.session()['sharedGallery'] is SHARED
+assert len(bob.items()) == (2 if SHARED else 0)
 # Browser budget is exhausted even after submissions were closed/reopened.
 assert alice.upload()[0] == 429
 assert bob.upload()[0] == 200
@@ -82,5 +114,8 @@ assert bob.upload()[0] == 200
 fresh = Client(); fresh.session()
 status, body, headers = fresh.upload(headers={'X-Forwarded-For':'203.0.113.77'})
 assert status == 429 and int(headers['Retry-After']) > 0, (status, body)
-assert len(bob.items()) == 4
-print('PASS: root, automatic identities, shared gallery, metadata minimization, legacy-name privacy, CSRF/origin checks, admin-only originals/control, no original-video fallback, hide/close controls and IP/browser limits despite cookie reset/spoofed XFF.')
+assert len(bob.items()) == (4 if SHARED else 2)
+assert len(alice.items()) == (4 if SHARED else 2)
+assert len(fresh.items()) == (4 if SHARED else 0)
+assert json.loads(admin.request('/Wedding/AdminItems')[1])['total'] == 4
+print('PASS: root, automatic distinct identities, owner-only default/explicit sharing, direct photo/video/range authorization, legacy ownership, metadata, CSRF, admin-only masters/controls, hidden/closed previews, and IP/browser rate limits. Shared:', SHARED)

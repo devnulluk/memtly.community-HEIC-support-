@@ -1,4 +1,4 @@
-// Real Chromium contexts against the real Production application over Caddy HTTPS.
+// Real independent Chromium contexts and the real Production app behind HTTPS.
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -6,93 +6,128 @@ const crypto = require('node:crypto');
 (async () => {
   const base = 'https://wedding.test:5443';
   const browser = await chromium.launch({ headless: true });
-  const errors = [];
-  const contexts = [];
+  const errors = [], contexts = [];
   try {
     const context = async () => { const c = await browser.newContext({ ignoreHTTPSErrors: true, viewport: {width:390,height:844} }); contexts.push(c); return c; };
-    const alice = await context(), bob = await context(), admin = await context();
+    const alice = await context(), bob = await context(), admin = await context(), fresh = await context();
     const a = await alice.newPage(), b = await bob.newPage(), m = await admin.newPage();
     for (const p of [a,b,m]) p.on('pageerror', e => errors.push(e.message));
+    const items = async c => (await (await c.request.get(base + '/Wedding/Items')).json());
+    const waitReady = async (c, id) => {
+      for (let i=0;i<90;i++) {
+        const item = (await items(c)).items.find(x=>x.id===id);
+        if (item?.preview==='ready') return item;
+        await new Promise(r=>setTimeout(r,1000));
+      }
+      throw new Error('Preview did not become ready: '+id);
+    };
     assert.equal((await a.goto(base + '/')).status(), 200);
     await a.locator('#guest:not([hidden])').waitFor();
     assert.equal(a.url(), base + '/');
     await require('./wedding_theme_checks.cjs')(a);
-    const aCookies = await alice.cookies();
-    const guestCookie = aCookies.find(c => c.name === '__Host-NewlandBrownGuest');
+    const guestCookie = (await alice.cookies()).find(c => c.name === '__Host-NewlandBrownGuest');
     assert(guestCookie && guestCookie.secure && guestCookie.httpOnly && guestCookie.path === '/');
-    assert.equal(await a.locator('#files').isDisabled(), false);
+    const session = await (await alice.request.get(base + '/Wedding/Session')).json();
+    assert.equal(session.publicAccess,true);
+    assert.equal(session.sharedGallery,false, 'Open uploads must not imply sharing');
+    assert.equal(await a.locator('#files').isDisabled(),false);
+    assert.match(await a.locator('#uploads-tab').innerText(),/Your uploads/);
     await a.locator('#guest-name').fill('Browser guest');
     await a.locator('#files').setInputFiles('artifacts/browser-original.png');
     await a.locator('#thank-you:not([hidden])').waitFor({timeout:60000});
-    const session = await (await a.request.get(base + '/Wedding/Session')).json();
-    const listing = await (await a.request.get(base + '/Wedding/Items')).json();
+    const listing = await items(alice);
     assert.equal(listing.total,1);
     const id = listing.items[0].id;
     assert(!('sha256' in listing.items[0]) && !('bytes' in listing.items[0]));
     assert(!JSON.stringify(listing).includes('browser-original.png'));
+    await waitReady(alice,id);
+    assert.equal((await alice.request.get(base+'/Wedding/Preview/'+id)).status(),200);
     await b.goto(base + '/'); await b.locator('#guest:not([hidden])').waitFor();
+    const bCookie=(await bob.cookies()).find(c=>c.name==='__Host-NewlandBrownGuest');
+    assert(bCookie && bCookie.value!==guestCookie.value);
+    assert.equal((await items(bob)).total,0);
     await b.locator('#uploads-tab').click();
-    await b.getByText('Browser guest', {exact:true}).waitFor();
-    assert.equal((await b.request.get(base + '/Wedding/Original/' + id, {maxRedirects:0})).status(),302);
-    assert.equal((await b.request.get(base + '/Wedding/Export', {maxRedirects:0})).status(),302);
-    await a.screenshot({path:'artifacts/wedding-root-mobile.png', fullPage:true});
-    // Exercise the real Memtly login form and embedded webpack manifest.
-    const login = await m.goto(base + '/Account/Login'); assert.equal(login.status(),200);
-    const token = await m.locator('input[name="__RequestVerificationToken"]').first().inputValue();
-    const loginResult = await m.request.post(base + '/Account/Login', { form: {
-      Username:'admin', Password:process.env.WEDDING_TEST_PASSWORD, __RequestVerificationToken:token
+    assert.equal(await b.getByText('Browser guest',{exact:true}).count(),0);
+    assert.equal((await bob.request.get(base+'/Wedding/Preview/'+id)).status(),404);
+    assert.equal((await bob.request.get(base+'/Wedding/Preview/'+id,{headers:{Range:'bytes=0-10'}})).status(),404);
+    assert.equal((await bob.request.get(base+'/Wedding/Original/'+id,{maxRedirects:0})).status(),302);
+    assert.equal((await bob.request.get(base+'/Wedding/Export',{maxRedirects:0})).status(),302);
+    // Both people can upload from the same IP, but get different private collections.
+    await b.locator('#upload-tab').click();
+    await b.locator('#guest-name').fill('Other browser');
+    await b.locator('#files').setInputFiles('artifacts/browser-original.png');
+    await b.locator('#thank-you:not([hidden])').waitFor({timeout:60000});
+    const bobListing=await items(bob); assert.equal(bobListing.total,1);
+    const bobId=bobListing.items[0].id; assert.notEqual(bobId,id);
+    await waitReady(bob,bobId);
+    assert.equal((await alice.request.get(base+'/Wedding/Preview/'+bobId)).status(),404);
+    assert.deepEqual((await items(alice)).items.map(i=>i.id),[id]);
+    assert.deepEqual((await items(bob)).items.map(i=>i.id),[bobId]);
+    await a.screenshot({path:'artifacts/wedding-root-mobile.png',fullPage:true});
+    // Real Memtly login: the administrator collection alone lists all uploads.
+    assert.equal((await m.goto(base+'/Account/Login')).status(),200);
+    const token=await m.locator('input[name="__RequestVerificationToken"]').first().inputValue();
+    const loginResult=await m.request.post(base+'/Account/Login',{form:{
+      Username:'admin',Password:process.env.WEDDING_TEST_PASSWORD,__RequestVerificationToken:token
     }});
     assert.equal(loginResult.status(),200);
-    const adminSession = await (await m.request.get(base + '/Wedding/Session')).json();
+    const adminSession=await(await m.request.get(base+'/Wedding/Session')).json();
     assert.equal(adminSession.admin,true);
-    await m.goto(base + '/Wedding/Admin');
-    await m.getByRole('heading', {name:'Our wedding collection',exact:true}).waitFor();
-    const original = await m.request.get(base + '/Wedding/Original/' + id);
-    assert.equal(original.status(),200);
-    assert.deepEqual(await original.body(),fs.readFileSync('artifacts/browser-original.png'));
-    const controls = {headers:{'X-Wedding-CSRF':adminSession.csrf}};
-    assert.equal((await m.request.post(base + '/Wedding/Visibility/' + id, {...controls, data:{hidden:true}})).status(),200);
-    assert.equal((await (await b.request.get(base + '/Wedding/Items')).json()).total,0);
-    assert.equal((await b.request.get(base + '/Wedding/Preview/' + id)).status(),404);
-    await m.request.post(base + '/Wedding/Visibility/' + id, {...controls, data:{hidden:false}});
-    m.on('dialog', d => d.accept());
+    await m.goto(base+'/Wedding/Admin');
+    await m.getByRole('heading',{name:'Our wedding collection',exact:true}).waitFor();
+    assert.equal((await(await admin.request.get(base+'/Wedding/AdminItems')).json()).total,2);
+    assert.equal((await items(admin)).total,0, 'Guest listing remains browser-scoped even when signed in');
+    assert.deepEqual(await(await admin.request.get(base+'/Wedding/Original/'+id)).body(),fs.readFileSync('artifacts/browser-original.png'));
+    const controls={headers:{'X-Wedding-CSRF':adminSession.csrf}};
+    assert.equal((await admin.request.post(base+'/Wedding/Visibility/'+id,{...controls,data:{hidden:true}})).status(),200);
+    assert.equal((await items(alice)).total,0);
+    assert.equal((await alice.request.get(base+'/Wedding/Preview/'+id)).status(),404);
+    assert.equal((await bob.request.get(base+'/Wedding/Preview/'+id)).status(),404);
+    await admin.request.post(base+'/Wedding/Visibility/'+id,{...controls,data:{hidden:false}});
+    m.on('dialog',d=>d.accept());
     await m.locator('#toggle-uploads').click();
     await m.getByRole('button',{name:'Reopen uploads',exact:true}).waitFor();
     await a.reload(); await a.locator('#guest:not([hidden])').waitFor();
     assert.equal(await a.locator('#files').isDisabled(),true);
-    const closed = await (await a.request.get(base + '/Wedding/Session')).json();
-    const uploadHeaders = {'X-Wedding-CSRF':closed.csrf,'Content-Type':'application/octet-stream','X-File-Name':'closed.png','X-Upload-ID':crypto.randomUUID().replaceAll('-','')};
-    assert.equal((await a.request.post(base + '/Wedding/Upload',{headers:uploadHeaders,data:fs.readFileSync('artifacts/browser-original.png')})).status(),403);
+    const closed=await(await alice.request.get(base+'/Wedding/Session')).json();
+    const uploadHeaders={'X-Wedding-CSRF':closed.csrf,'Content-Type':'application/octet-stream','X-File-Name':'closed.png','X-Upload-ID':crypto.randomUUID().replaceAll('-','')};
+    assert.equal((await alice.request.post(base+'/Wedding/Upload',{headers:uploadHeaders,data:fs.readFileSync('artifacts/browser-original.png')})).status(),403);
     await m.locator('#toggle-uploads').click();
     await m.getByRole('button',{name:'Close uploads',exact:true}).waitFor();
     await a.reload(); await a.locator('#guest:not([hidden])').waitFor();
     await a.locator('#files').setInputFiles('artifacts/browser-original.mp4');
     await a.locator('#thank-you:not([hidden])').waitFor({timeout:60000});
-    let video;
-    for(let i=0;i<90;i++) {
-      const items = await (await b.request.get(base + '/Wedding/Items')).json();
-      video = items.items.find(x=>x.video);
-      if(video?.preview==='ready') break;
-      await new Promise(r=>setTimeout(r,1000));
-    }
-    assert.equal(video?.preview,'ready');
-    const preview = await b.request.get(base + '/Wedding/Video/' + video.id);
-    assert.equal(preview.status(),200);
-    assert.equal(preview.headers()['content-type'],'video/mp4');
+    const videoId=(await items(alice)).items.find(x=>x.video).id;
+    await waitReady(alice,videoId);
+    const preview=await alice.request.get(base+'/Wedding/Video/'+videoId);
+    assert.equal(preview.status(),200); assert.equal(preview.headers()['content-type'],'video/mp4');
     assert.notDeepEqual(await preview.body(),fs.readFileSync('artifacts/browser-original.mp4'));
-    const fullVideo = await m.request.get(base + '/Wedding/Original/' + video.id);
-    assert.deepEqual(await fullVideo.body(),fs.readFileSync('artifacts/browser-original.mp4'));
-    assert.equal((await b.request.get(base + '/Wedding/Original/' + video.id,{maxRedirects:0})).status(),302);
-    await b.reload(); await b.locator('#guest:not([hidden])').waitFor(); await b.locator('#uploads-tab').click();
-    await b.getByRole('button',{name:'View Wedding video'}).waitFor();
-    await b.getByRole('button',{name:'View Wedding video'}).click();
-    await b.locator('dialog[open] video').waitFor();
+    assert.equal((await bob.request.get(base+'/Wedding/Video/'+videoId)).status(),404);
+    assert.equal((await bob.request.get(base+'/Wedding/Video/'+videoId,{headers:{Range:'bytes=0-99'}})).status(),404);
+    assert.deepEqual(await(await admin.request.get(base+'/Wedding/Original/'+videoId)).body(),fs.readFileSync('artifacts/browser-original.mp4'));
+    await fresh.request.get(base+'/Wedding/Session');
+    assert.equal((await items(fresh)).total,0);
+    assert.equal((await fresh.request.get(base+'/Wedding/Preview/'+id)).status(),404);
+    assert.equal((await fresh.request.get(base+'/Wedding/Video/'+videoId)).status(),404);
+    // Close/reopen preview controls never turn private collections into a shared gallery.
+    await m.locator('#toggle-gallery').click();
+    await m.getByRole('button',{name:'Reopen guest previews',exact:true}).waitFor();
+    assert.equal((await items(alice)).total,0);
+    assert.equal((await alice.request.get(base+'/Wedding/Video/'+videoId)).status(),404);
+    assert.equal((await admin.request.get(base+'/Wedding/Video/'+videoId)).status(),200);
+    await m.locator('#toggle-gallery').click();
+    await m.getByRole('button',{name:'Close guest previews',exact:true}).waitFor();
+    assert.equal((await items(alice)).total,2);
+    assert.deepEqual((await items(bob)).items.map(i=>i.id),[bobId]);
+    assert.equal((await(await bob.request.get(base+'/Wedding/Session')).json()).sharedGallery,false);
+    await a.reload(); await a.locator('#guest:not([hidden])').waitFor(); await a.locator('#uploads-tab').click();
+    await a.getByRole('button',{name:'View Wedding video'}).click();
+    await a.locator('dialog[open] video').waitFor();
     await m.reload(); await m.locator('#admin-tools:not([hidden])').waitFor();
-    await m.evaluate(() => document.fonts.ready);
-    await m.screenshot({path:'artifacts/wedding-admin-mobile.png', fullPage:true});
+    await m.evaluate(()=>document.fonts.ready);
+    await m.screenshot({path:'artifacts/wedding-admin-mobile.png',fullPage:true});
     assert.deepEqual(errors,[]);
-    // Retain cookies and IDs for a restart-persistence check in the next invocation.
-    fs.writeFileSync('artifacts/public-browser-state.json', JSON.stringify({alice:await alice.storageState(),admin:await admin.storageState(),id,videoId:video.id}));
-    console.log('PASS: real Chromium, HTTPS secure identities, clean root, no-code upload, shared gallery, real admin login, private masters, hide/close controls, PNG and video previews, unchanged originals and zero page errors.');
+    fs.writeFileSync('artifacts/public-browser-state.json',JSON.stringify({alice:await alice.storageState(),bob:await bob.storageState(),admin:await admin.storageState(),id,bobId,videoId}));
+    console.log('PASS: HTTPS clean-root account-free uploads, distinct browsers on same IP, owner-only listings, direct photo/video/range rejection across browsers, private masters, real admin login/all uploads, hide/close/reopen controls, unchanged originals and zero page errors.');
   } finally { for(const c of contexts) await c.close(); await browser.close(); }
-})().catch(error => { console.error(error); process.exitCode=1; });
+})().catch(error=>{console.error(error);process.exitCode=1;});
