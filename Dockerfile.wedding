@@ -25,7 +25,11 @@ RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 WORKDIR /src
 COPY . .
-# Verify the inherited graph, then use pinned security overrides in a separate lockfile.
+# The manifest is an EmbeddedResource selected at MSBuild evaluation time.
+# It MUST exist before .NET evaluates/compiles Core, not merely at runtime.
+WORKDIR /src/Memtly.Core/Memtly.Core
+RUN npm ci && npm run production && test -s wwwroot/dist/manifest.json
+WORKDIR /src
 RUN dotnet restore Memtly.Community/Memtly.Community.csproj --locked-mode
 ENV WeddingSecurityUpdates=true
 RUN dotnet restore Memtly.Community/Memtly.Community.csproj --force-evaluate -p:RestoreLockedMode=false
@@ -35,7 +39,7 @@ RUN mkdir -p /publish/build-manifests && \
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble AS final
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libde265-0 libpng16-16t64 libjpeg-turbo8 libbrotli1 zlib1g libstdc++6 libfontconfig1 \
+    ffmpeg libde265-0 libpng16-16t64 libjpeg-turbo8 libbrotli1 zlib1g libstdc++6 libfontconfig1 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=heif /opt/heif /opt/heif
 ENV PATH="/opt/heif/bin:${PATH}" LD_LIBRARY_PATH="/opt/heif/lib" CODE_BUILT_BY="Newland-Brown wedding fork"

@@ -24,13 +24,19 @@ public static class WeddingIntegration
     {
         var options = config.GetSection("Wedding").Get<WeddingOptions>() ?? new();
         options.Validate();
+        var publicOptions = config.GetSection("WeddingPublic").Get<WeddingPublicOptions>() ?? new();
+        publicOptions.Validate();
         services.AddSingleton(options);
+        services.AddSingleton(publicOptions);
+        services.AddSingleton<WeddingPublicState>();
+        services.AddSingleton<WeddingAbuseLimits>();
         services.AddSingleton<WeddingSession>();
         services.AddSingleton<WeddingStore>();
         services.AddScoped<IWeddingAdmin, MemtlyWeddingAdmin>();
         services.AddScoped<IWeddingPreview, MemtlyWeddingPreview>();
         services.AddScoped<WeddingGuard>();
         services.AddHostedService<WeddingPreviewWorker>();
+        services.AddHostedService<WeddingVideoWorker>();
         services.AddWeddingNtfy();
         services.AddAntiforgery(o =>
         {
@@ -53,6 +59,7 @@ public static class WeddingIntegration
             {
                 o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
                 o.ForwardLimit = 1;
+                // Preserve framework loopback defaults; add only the operator's exact proxy.
                 if (!string.IsNullOrWhiteSpace(options.TrustedProxy))
                     o.KnownProxies.Add(IPAddress.Parse(options.TrustedProxy));
             });
@@ -64,6 +71,7 @@ public static class WeddingIntegration
     {
         var options = app.ApplicationServices.GetRequiredService<WeddingOptions>();
         if (!options.Enabled) return app;
+        var publicOptions = app.ApplicationServices.GetRequiredService<WeddingPublicOptions>();
         var env = app.ApplicationServices.GetRequiredService<IWebHostEnvironment>();
         if (options.DevelopmentHttp && !env.IsDevelopment())
             throw new InvalidOperationException("Wedding:DevelopmentHttp is permitted only in Development.");
@@ -76,8 +84,9 @@ public static class WeddingIntegration
         {
             if (context.Request.Path == "/")
             {
-                context.Response.Redirect("/Wedding");
-                return;
+                if (!publicOptions.Enabled) { context.Response.Redirect("/Wedding"); return; }
+                // Internal rewrite, not a redirect: the browser stays on the clean root URL.
+                context.Request.Path = "/Wedding";
             }
             await next();
         });

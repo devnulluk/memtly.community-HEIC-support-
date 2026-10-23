@@ -25,7 +25,7 @@ public sealed class WeddingOptions
     public void Validate()
     {
         if (!Enabled) return;
-        if (InviteKey.Length < 32) throw new InvalidOperationException("Set Wedding__InviteKey to a random secret of at least 32 characters.");
+        if (InviteKey.Length < 32) throw new InvalidOperationException("Set Wedding__InviteKey to a random secret of at least 32 characters. This remains a server-side identity namespace in public mode.");
         if (MaxFileBytes < 0 || MaxGuestBytes < 0 || MaxTotalBytes < 0 || MaxGuestFiles < 0 ||
             MinFreeBytes < 1024 * 1024 || CookieDays is < 1 or > 365)
             throw new InvalidOperationException("Wedding quotas must be non-negative (0 = no quota); retain at least 1 MiB of free-space reserve.");
@@ -58,10 +58,12 @@ public sealed class WeddingSession
             if (cookie == null || cookie.Length > 2048) return null;
             var guest = JsonSerializer.Deserialize<GuestCredential>(protector.Unprotect(cookie));
             return guest != null && guest.Expires > DateTimeOffset.UtcNow && guest.Invitation == Invitation &&
-                guest.Id.Length == 64 && guest.Id.All(Uri.IsHexDigit) ? guest.Id : null;
+                guest.Id?.Length == 64 && guest.Id.All(Uri.IsHexDigit) ? guest.Id : null;
         }
         catch (Exception ex) when (ex is CryptographicException or JsonException or FormatException) { return null; }
     }
+    // Issued server-side; callers never disclose the invitation secret in public mode.
+    public bool EnsurePublic(HttpContext context) => Owner(context) != null || Enter(context, options.InviteKey);
     public bool Enter(HttpContext context, string? token)
     {
         if (token == null || token.Length > 512 || !CryptographicOperations.FixedTimeEquals(
@@ -81,7 +83,8 @@ public sealed record WeddingItem(
     string Name, long Bytes, string Sha256, DateTimeOffset UploadedUtc,
     string Preview = "pending", bool Reviewed = false,
     string Notification = "disabled", int NotificationAttempts = 0,
-    DateTimeOffset? NotifyAfter = null, DateTimeOffset? NotifiedUtc = null)
+    DateTimeOffset? NotifyAfter = null, DateTimeOffset? NotifiedUtc = null,
+    string VideoPreview = "pending", bool Hidden = false, bool ShareName = false)
 {
     public bool IsVideo => Extension is ".mp4" or ".mov";
 }
@@ -148,8 +151,6 @@ public sealed class WeddingStore
         name = new string(name.Where(c => !char.IsControl(c)).ToArray()).Trim();
         if (name.Length > 80) throw new WeddingUploadException(400, "Please keep your name to 80 characters.");
         if (!ValidId(requestId)) throw new WeddingUploadException(400, "Missing upload request ID.");
-        // Even a chunked transfer must declare its file length using X-File-Size.
-        // This is a reservation, not trust: the exact byte count is checked below.
         if (contentLength is not > 0) throw new WeddingUploadException(411, "Please provide the file size before uploading.");
         var reservation = contentLength.Value;
         if (options.MaxFileBytes > 0 && reservation > options.MaxFileBytes)
@@ -187,6 +188,9 @@ public sealed class WeddingStore
             using var readTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
             long length = 0, sinceSpaceCheck = 0;
             var buffer = new byte[64 * 1024];
+            var header = new byte[64];
+            var headerCount = 0;
+            var headerValidated = false;
             await using (var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None, buffer.Length, FileOptions.Asynchronous))
             {
                 while (true)
@@ -199,6 +203,18 @@ public sealed class WeddingStore
                     finally { readTimeout.CancelAfter(Timeout.InfiniteTimeSpan); }
                     if (count == 0) break;
                     if (count > reservation - length) throw new WeddingUploadException(413, "This file exceeded its declared size.");
+                    if (!headerValidated)
+                    {
+                        var take = Math.Min(header.Length - headerCount, count);
+                        buffer.AsSpan(0, take).CopyTo(header.AsSpan(headerCount));
+                        headerCount += take;
+                        if (headerCount == header.Length || length + count == reservation)
+                        {
+                            if (!SignatureMatches(extension, header))
+                                throw new WeddingUploadException(415, "The file contents do not match its photo or video extension.");
+                            headerValidated = true;
+                        }
+                    }
                     if (sinceSpaceCheck >= 8L * 1024 * 1024) { disk.Check(); sinceSpaceCheck = 0; }
                     hash.AppendData(buffer, 0, count);
                     await output.WriteAsync(buffer.AsMemory(0, count), cancellation);
@@ -211,14 +227,11 @@ public sealed class WeddingStore
             }
             if (length != reservation) throw new WeddingUploadException(400, "The upload was incomplete. Please retry it.");
             disk.Check();
-            var header = new byte[64];
-            using (var stream = File.OpenRead(target)) stream.ReadExactly(header.AsSpan(0, (int)Math.Min(length, header.Length)));
-            if (!SignatureMatches(extension, header)) throw new WeddingUploadException(415, "The file contents do not match its photo or video extension.");
+            if (!headerValidated) throw new WeddingUploadException(415, "Invalid media header.");
             var item = new WeddingItem(id, owner, requestId, filename, extension, name, length,
                 Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant(), DateTimeOffset.UtcNow,
                 Preview: extension is ".mp4" or ".mov" ? "video" : "pending",
                 Notification: options.Ntfy.Enabled ? "pending" : "disabled");
-            // The notification outbox is committed with the upload, never sent in this request.
             await File.WriteAllTextAsync(Path.Combine(staging, "upload.json"), JsonSerializer.Serialize(item), cancellation);
             Directory.Move(staging, Folder(id));
             return item;

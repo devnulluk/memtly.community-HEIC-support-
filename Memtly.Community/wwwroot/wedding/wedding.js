@@ -6,6 +6,7 @@
   let state, running = false, page = 0, pages = 0, collectionOpen = adminMode, poll;
   const make = (tag, text, cls) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (cls) node.className = cls; return node; };
   const size = bytes => bytes >= 1073741824 ? `${(bytes / 1073741824).toFixed(2)} GiB` : bytes < 1048576 ? `${Math.ceil(bytes / 1024)} KiB` : `${(bytes / 1048576).toFixed(1)} MiB`;
+  const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
   function notify(message) { $('notice').textContent = message; $('notice').hidden = !message; }
   async function api(path, body) {
     const response = await fetch('/Wedding/' + path, {
@@ -13,11 +14,19 @@
       headers: body === undefined ? {} : { 'Content-Type': 'application/json', 'X-Wedding-CSRF': state.csrf },
       body: body === undefined ? undefined : JSON.stringify(body)
     });
-    const type = response.headers.get('content-type') || '';
-    if (!type.includes('application/json')) throw new Error('Please reopen the private link, or sign in again if you are using the couple’s collection.');
+    if (!(response.headers.get('content-type') || '').includes('application/json'))
+      throw new Error('Please reopen the homepage, or sign in again for the couple’s collection.');
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'That request could not be completed. Please try again.');
     return data;
+  }
+  function settingsUI() {
+    $('closed-message').hidden = state.uploadsOpen;
+    $('files').disabled = !state.uploadsOpen;
+    $('guest-name').disabled = !state.uploadsOpen;
+    $('toggle-uploads').textContent = state.uploadsOpen ? 'Close uploads' : 'Reopen uploads';
+    $('toggle-gallery').textContent = state.galleryOpen ? 'Close shared gallery' : 'Reopen shared gallery';
+    $('settings-status').textContent = `Uploads: ${state.uploadsOpen ? 'open' : 'closed'} · Shared gallery: ${state.galleryOpen ? 'open' : 'closed'}`;
   }
   function tab(uploads) {
     collectionOpen = uploads;
@@ -32,20 +41,19 @@
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
     try {
       state = await api('Session');
-      if (invitation) {
-        await api('Enter', { token: invitation });
-        state = await api('Session');
-      }
+      // Old invitation cards still work; public mode needs no fragment at all.
+      if (invitation && !state.publicAccess) { await api('Enter', { token: invitation }); state = await api('Session'); }
       $('admin-link').hidden = !state.admin;
-      $('file-limit').textContent = state.maxFileBytes > 0
-        ? `Up to ${size(state.maxFileBytes)} per file.`
-        : 'Full-quality videos welcome. No fixed file-size cap, subject to available storage.';
+      $('file-limit').textContent = state.maxFileBytes > 0 ? `Up to ${size(state.maxFileBytes)} per file.` : 'Full-quality videos welcome. No fixed file-size cap, subject to available storage.';
+      $('sharing-note').hidden = !state.publicAccess;
+      $('name-note').textContent = state.publicAccess ? 'A name supplied here is shown alongside this upload in the shared gallery. You can leave it blank.' : 'Your name is shown to Mark & Keziah with your uploads.';
+      settingsUI();
       if (adminMode) {
         $('privacy').hidden = true;
         $('heading').replaceChildren(make('span', 'Every memory,'), document.createElement('br'), make('em', 'safely kept.'));
         $('collection-title').textContent = 'Our wedding collection';
         $('collection-kicker').textContent = 'JUST FOR MARK & KEZIAH';
-        $('collection-note').textContent = 'All guests’ uploads, optional names and untouched originals. Only Memtly administrators can open this collection.';
+        $('collection-note').textContent = state.publicAccess ? 'Guest viewing copies are shared while the gallery is open. Original downloads and these controls remain administrator-only.' : 'Your private collection of every guest’s uploads and untouched originals.';
         $('admin-tools').hidden = !state.admin;
         $('collection-panel').hidden = !state.admin;
         $('admin-denied').hidden = state.admin;
@@ -53,22 +61,28 @@
       } else {
         $('guest').hidden = !state.invited;
         $('locked').hidden = state.invited;
+        if (!state.publicAccess) {
+          $('uploads-tab').replaceChildren(document.createTextNode('Your uploads '), $('count'));
+          $('collection-title').textContent = 'The memories you’ve shared';
+          $('collection-note').textContent = 'Only this browser and the couple can see these uploads in invitation mode.';
+        }
         if (state.invited) {
           try { $('guest-name').value = localStorage.getItem('wedding-optional-name') || ''; } catch (_) {}
           await load();
         }
       }
-    } catch (error) { notify(error.message); if (!adminMode) $('locked').hidden = false; }
+    } catch (error) { notify(error.message); }
   }
   $('guest-name').addEventListener('change', () => { try { localStorage.setItem('wedding-optional-name', $('guest-name').value); } catch (_) {} });
   function addFiles(files) {
+    if (!state?.invited || !state.uploadsOpen) { notify('Uploads are currently closed.'); return; }
     $('thank-you').hidden = true;
     for (const file of files) {
       const li = make('li');
-      const title = make('span', `${file.name} · ${size(file.size)}`);
       const status = make('span', 'Waiting to upload', 'status');
-      const progress = document.createElement('progress'); progress.max = 100; progress.value = 0; progress.setAttribute('aria-label', `Upload progress for ${file.name}`);
-      li.append(title, status, progress); $('queue').append(li);
+      const progress = document.createElement('progress'); progress.max = 100; progress.value = 0;
+      progress.setAttribute('aria-label', `Upload progress for ${file.name}`);
+      li.append(make('span', `${file.name} · ${size(file.size)}`), status, progress); $('queue').append(li);
       const item = { file, id: crypto.randomUUID().replace(/-/g, ''), status, progress, state: 'queued', name: $('guest-name').value.trim() };
       if (!/\.(jpe?g|png|webp|heic|heif|mp4|mov)$/i.test(file.name) || !file.size || (state.maxFileBytes > 0 && file.size > state.maxFileBytes)) {
         item.state = 'invalid'; status.textContent = 'Not sent: unsupported file type, empty file, or above the configured size limit.'; status.classList.add('failed');
@@ -82,7 +96,7 @@
   const zone = $('drop-zone');
   ['dragenter', 'dragover'].forEach(event => zone.addEventListener(event, e => { e.preventDefault(); zone.classList.add('drag'); }));
   ['dragleave', 'drop'].forEach(event => zone.addEventListener(event, e => { e.preventDefault(); zone.classList.remove('drag'); }));
-  zone.addEventListener('drop', e => { if (state?.invited) addFiles(e.dataTransfer.files); });
+  zone.addEventListener('drop', e => addFiles(e.dataTransfer.files));
   function upload(item) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -91,17 +105,21 @@
       xhr.setRequestHeader('X-Wedding-CSRF', state.csrf);
       xhr.setRequestHeader('X-File-Name', encodeURIComponent(item.file.name));
       xhr.setRequestHeader('X-Guest-Name', encodeURIComponent(item.name));
+      xhr.setRequestHeader('X-Share-Name', String(!!state.publicAccess));
       xhr.setRequestHeader('X-Upload-ID', item.id);
       xhr.setRequestHeader('X-File-Size', String(item.file.size));
-      // No wall-clock cutoff for large videos. The server retains idle protections.
       xhr.timeout = 0;
       xhr.upload.onprogress = e => { if (e.lengthComputable) { item.progress.value = Math.round(e.loaded / e.total * 100); item.status.textContent = item.progress.value === 100 ? 'Checking and saving…' : `Uploading · ${item.progress.value}%`; } };
       xhr.onload = () => {
         let data; try { data = JSON.parse(xhr.responseText); } catch (_) {}
-        if (xhr.status >= 200 && xhr.status < 300 && data?.success) resolve(data);
-        else reject(new Error(data?.error || 'Not confirmed. Your file is still on your device; please retry.'));
+        if (xhr.status >= 200 && xhr.status < 300 && data?.success) { resolve(data); return; }
+        const error = new Error(data?.error || 'Not confirmed. Please keep your original and retry.');
+        error.status = xhr.status;
+        error.retryAfter = Math.min(120, Math.max(1, Number(xhr.getResponseHeader('Retry-After')) || 5));
+        reject(error);
       };
-      xhr.onerror = xhr.ontimeout = xhr.onabort = () => reject(new Error('Connection interrupted. Please retry this file when you’re connected.'));
+      xhr.onerror = xhr.onabort = () => reject(new Error('Connection interrupted. Please retry when you’re connected.'));
+      // The browser File is sent unchanged: no canvas or client-side re-encoding.
       xhr.send(item.file);
     });
   }
@@ -111,17 +129,24 @@
     try {
       let item;
       while ((item = queue.find(q => q.state === 'queued'))) {
-        item.state = 'uploading'; item.status.classList.remove('failed'); item.status.textContent = 'Uploading…';
-        try { await upload(item); item.state = 'saved'; item.progress.value = 100; item.status.textContent = 'Saved safely ♡'; }
-        catch (error) { item.state = 'failed'; item.status.textContent = 'Not sent: ' + error.message; item.status.classList.add('failed'); }
+        item.state = 'uploading'; item.status.classList.remove('failed');
+        for (let attempt = 0; attempt < 9; attempt++) {
+          try { await upload(item); item.state = 'saved'; item.progress.value = 100; item.status.textContent = 'Saved safely ♡'; break; }
+          catch (error) {
+            if (error.status === 429 && attempt < 8) {
+              item.status.textContent = `The postbox is busy. Retrying in ${error.retryAfter} seconds…`;
+              await pause(error.retryAfter * 1000); continue;
+            }
+            item.state = 'failed'; item.status.textContent = 'Not sent: ' + error.message; item.status.classList.add('failed'); break;
+          }
+        }
       }
     } finally {
       running = false;
       $('retry-failed').hidden = !queue.some(q => q.state === 'failed');
       $('thank-you').hidden = !queue.some(q => q.state === 'saved');
-      if (queue.some(q => q.state === 'failed' || q.state === 'invalid'))
-        $('thank-you').querySelector('p').textContent = 'Thank you for the memories received. Some files above still need your attention.';
-      else $('thank-you').querySelector('p').textContent = 'Thank you for sharing a little of our day with us.';
+      $('thank-you').querySelector('p').textContent = queue.some(q => q.state === 'failed' || q.state === 'invalid')
+        ? 'Thank you for the memories received. Some files above still need your attention.' : 'Thank you for sharing a little of our day with us.';
       await load();
     }
   }
@@ -129,17 +154,26 @@
   window.addEventListener('beforeunload', e => { if (running) { e.preventDefault(); e.returnValue = ''; } });
   $('upload-tab').addEventListener('click', () => tab(false));
   $('uploads-tab').addEventListener('click', () => tab(true));
-  $('view-uploads').addEventListener('click', () => { tab(true); $('collection-panel').scrollIntoView({ behavior: 'auto', block: 'start' }); });
+  $('view-uploads').addEventListener('click', () => { tab(true); $('collection-panel').scrollIntoView({ block: 'start' }); });
   $('refresh').addEventListener('click', load);
   $('previous').addEventListener('click', () => { if (page > 0) { page--; load(); } });
   $('next').addEventListener('click', () => { if (page + 1 < pages) { page++; load(); } });
+  async function toggleSetting(key) {
+    if (!confirm(`${state[key] ? 'Close' : 'Reopen'} ${key === 'uploadsOpen' ? 'new uploads' : 'the shared guest gallery'}?`)) return;
+    try {
+      const result = await api('PublicSettings', { uploadsOpen: state.uploadsOpen, galleryOpen: state.galleryOpen, [key]: !state[key] });
+      Object.assign(state, result); settingsUI();
+    } catch (error) { notify(error.message); }
+  }
+  $('toggle-uploads').addEventListener('click', () => toggleSetting('uploadsOpen'));
+  $('toggle-gallery').addEventListener('click', () => toggleSetting('galleryOpen'));
   function openItem(item) {
     const media = document.createElement(item.video ? 'video' : 'img');
     media.src = `/Wedding/${item.video ? 'Video' : 'Preview'}/${item.id}`;
     if (item.video) { media.controls = true; media.playsInline = true; media.preload = 'metadata'; }
     else media.alt = item.filename;
     $('viewer-content').replaceChildren(media);
-    $('viewer-caption').textContent = item.video ? `${item.filename} · Some MOV/HEVC videos cannot play in this browser; the original is still safely stored.` : item.filename;
+    $('viewer-caption').textContent = item.video && state.publicAccess ? 'Viewing copy · up to the first two minutes. The full-quality original is kept for Mark & Keziah.' : item.filename;
     $('viewer').showModal();
   }
   $('close-viewer').addEventListener('click', () => $('viewer').close());
@@ -148,22 +182,28 @@
     const article = make('article', undefined, 'card');
     const button = make('button', undefined, 'thumbnail'); button.type = 'button';
     button.setAttribute('aria-label', `View ${item.filename}`);
-    if (item.preview === 'ready') {
+    if (item.video && (item.preview === 'ready' || (!state.publicAccess && item.preview === 'video'))) {
+      button.append(make('span', '▷ Play viewing copy', 'placeholder')); button.addEventListener('click', () => openItem(item));
+    } else if (!item.video && item.preview === 'ready') {
       const img = document.createElement('img'); img.src = '/Wedding/Preview/' + item.id; img.alt = item.filename; img.loading = 'lazy';
-      img.onerror = () => button.replaceChildren(make('span', 'Preview unavailable. Your original is safe.', 'placeholder'));
+      img.onerror = () => button.replaceChildren(make('span', 'Preview unavailable. The original is safely stored.', 'placeholder'));
       button.append(img); button.addEventListener('click', () => openItem(item));
-    } else if (item.video) { button.append(make('span', '▷ Play your video', 'placeholder')); button.addEventListener('click', () => openItem(item)); }
-    else { button.disabled = true; button.append(make('span', item.preview === 'unavailable' ? 'Original safely stored. A preview isn’t available for this file.' : 'Original safely stored. Preparing a preview…', 'placeholder')); }
-    article.append(button, make('p', item.filename, 'filename'), make('p', size(item.bytes), 'small'));
+    } else {
+      button.disabled = true;
+      button.append(make('span', item.preview === 'unavailable' ? 'Original safely stored. No viewing copy is available.' : 'Original safely stored. Preparing a viewing copy…', 'placeholder'));
+    }
+    article.append(button, make('p', item.filename, 'filename'));
+    if (item.name) article.append(make('p', item.name, 'small'));
     if (adminMode) {
-      article.append(make('p', item.name || 'Name not supplied', 'small'));
-      article.append(make('p', new Date(item.uploadedUtc).toLocaleString('en-GB'), 'small'));
+      article.append(make('p', `${size(item.bytes)} · ${new Date(item.uploadedUtc).toLocaleString('en-GB')}`, 'small'));
       const download = make('a', 'Download original', 'button'); download.href = '/Wedding/Original/' + item.id; article.append(download);
-      const review = make('button', item.reviewed ? '✓ Reviewed · undo' : 'Mark reviewed', 'secondary'); review.type = 'button';
-      review.addEventListener('click', async () => { try { await api('Review/' + item.id, { reviewed: !item.reviewed }); await load(); } catch (error) { notify(error.message); } }); article.append(review);
-      if (item.preview === 'unavailable') {
-        const retry = make('button', 'Try preview again', 'secondary'); retry.type = 'button'; retry.addEventListener('click', async () => { try { await api('Retry/' + item.id, {}); await load(); } catch (error) { notify(error.message); } }); article.append(retry);
-      }
+      const action = (text, path, body) => {
+        const b = make('button', text, 'secondary'); b.type = 'button';
+        b.addEventListener('click', async () => { try { await api(path + '/' + item.id, body); await load(); } catch (error) { notify(error.message); } }); article.append(b);
+      };
+      action(item.reviewed ? '✓ Reviewed · undo' : 'Mark reviewed', 'Review', { reviewed: !item.reviewed });
+      if (state.publicAccess) action(item.hidden ? 'Hidden · show in gallery' : 'Hide from gallery', 'Visibility', { hidden: !item.hidden });
+      if (item.preview === 'unavailable') action('Try preview again', 'Retry', {});
     }
     return article;
   }
@@ -174,13 +214,13 @@
       const data = await api((adminMode ? 'AdminItems' : 'Items') + '?page=' + page);
       pages = data.pages;
       $('count').textContent = data.total ? `(${data.total})` : '';
-      $('total').textContent = `${data.total} ${data.total === 1 ? 'memory' : 'memories'} safely received`;
+      $('total').textContent = `${data.total} ${data.total === 1 ? 'memory' : 'memories'}`;
       $('gallery').replaceChildren(...data.items.map(card));
-      if (!data.total) $('gallery').append(make('p', adminMode ? 'The postbox is ready for its first memory.' : 'Your memories will appear here once you’ve sent them.', 'empty'));
+      if (!data.total) $('gallery').append(make('p', !adminMode && state.publicAccess && !state.galleryOpen ? 'The shared gallery is currently closed.' : 'The postbox is ready for its first shared memory.', 'empty'));
       $('pagination').hidden = pages < 2;
       $('page-number').textContent = `Page ${page + 1} of ${pages}`;
       $('previous').disabled = page === 0; $('next').disabled = page + 1 >= pages;
-      if (collectionOpen && !document.hidden && data.items.some(i => i.preview === 'pending' || i.preview === 'processing')) poll = setTimeout(load, 5000);
+      if (collectionOpen && !document.hidden) poll = setTimeout(load, data.items.some(i => i.preview === 'pending' || i.preview === 'processing') ? 5000 : 30000);
     } catch (error) { $('gallery').replaceChildren(); notify(error.message); }
   }
   document.addEventListener('visibilitychange', () => { if (!document.hidden && collectionOpen) load(); });

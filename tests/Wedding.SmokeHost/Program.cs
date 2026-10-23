@@ -13,9 +13,17 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 });
 var root = Environment.GetEnvironmentVariable("TEST_ROOT") ?? Path.Combine(Path.GetTempPath(), "wedding-smoke-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(Path.Combine(root, "keys"));
-var options = new WeddingOptions { Enabled = true, InviteKey = "test-only-invitation-not-for-deployment-12345", StoragePath = Path.Combine(root, "media"), DevelopmentHttp = true, MaxFileBytes = 1048576 };
+var options = new WeddingOptions { Enabled = true, InviteKey = "test-only-invitation-not-for-deployment-12345", StoragePath = Path.Combine(root, "media"), DevelopmentHttp = true, MaxFileBytes = 1048576, MinFreeBytes = 1048576 };
 options.Validate();
+var publicOptions = new WeddingPublicOptions
+{
+    Enabled = Environment.GetEnvironmentVariable("TEST_PUBLIC") == "true",
+    UploadsPerBrowserPerMinute = 3, UploadsPerIpPerMinute = 6
+};
 builder.Services.AddSingleton(options);
+builder.Services.AddSingleton(publicOptions);
+builder.Services.AddSingleton<WeddingPublicState>();
+builder.Services.AddSingleton<WeddingAbuseLimits>();
 builder.Services.AddSingleton<WeddingSession>();
 builder.Services.AddSingleton<WeddingStore>();
 builder.Services.AddScoped<WeddingGuard>();
@@ -26,9 +34,9 @@ builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(P
 builder.Services.AddAntiforgery(o => { o.HeaderName = "X-Wedding-CSRF"; o.Cookie.IsEssential = true; });
 builder.Services.AddAuthentication("Test").AddScheme<AuthenticationSchemeOptions, TestAuthentication>("Test", _ => { });
 builder.Services.AddAuthorization();
-// ValidateAntiForgeryToken is an MVC ViewFeatures filter, not part of AddControllers alone.
 builder.Services.AddControllersWithViews();
 var app = builder.Build();
+app.Use(async (context, next) => { if (context.Request.Path == "/") context.Request.Path = "/Wedding"; await next(); });
 app.UseStaticFiles(); app.UseAuthentication(); app.UseAuthorization(); app.MapControllers();
 app.Run();
 

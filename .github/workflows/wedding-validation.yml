@@ -1,72 +1,78 @@
 name: Wedding validation
 on:
   push:
-    branches: [feature/wedding-guest-mode]
+    branches: [feature/wedding-guest-mode, feature/public-wedding-gallery]
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   access-and-integrity:
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - name: Check JavaScript and deployment script
+      - name: Check JavaScript and shell scripts
         run: |
           node --check Memtly.Community/wwwroot/wedding/wedding.js
-          bash -n deploy/setup.sh
+          node --check tests/public_browser.cjs
+          bash -n deploy/setup.sh tests/run_public_runtime.sh
       - name: Test disk safeguards and durable ntfy delivery
         run: dotnet run --project tests/Wedding.FeatureTests -c Release
-      - name: Build isolated host using production wedding controller and storage
+      - name: Build isolated host using production wedding controllers and storage
         run: dotnet build tests/Wedding.SmokeHost -c Release
-      - name: Run privacy and integrity smoke tests
+      - name: Test invitation compatibility and public-mode authorization/throttling
         env:
           ASPNETCORE_ENVIRONMENT: Development
         run: |
-          export TEST_ROOT=$(mktemp -d)
           export WEDDING_WEBROOT="$PWD/Memtly.Community/wwwroot"
-          dotnet run --no-build --project tests/Wedding.SmokeHost -c Release --urls http://127.0.0.1:5088 > /tmp/wedding-smoke.log 2>&1 &
-          host=$!
-          trap 'kill "$host" || true; tail -100 /tmp/wedding-smoke.log' EXIT
-          for attempt in $(seq 1 60); do
-            curl -fsS http://127.0.0.1:5088/Wedding/Session >/dev/null && break
-            kill -0 "$host"
-            sleep 1
+          for mode in private public; do
+            export TEST_ROOT=$(mktemp -d)
+            export TEST_PUBLIC=false
+            test "$mode" != public || export TEST_PUBLIC=true
+            dotnet run --no-build --project tests/Wedding.SmokeHost -c Release --urls http://127.0.0.1:5088 > /tmp/wedding-smoke.log 2>&1 &
+            host=$!
+            trap 'kill "$host" || true; tail -100 /tmp/wedding-smoke.log' EXIT
+            for attempt in $(seq 1 60); do
+              curl -fsS http://127.0.0.1:5088/Wedding/Session >/dev/null && break
+              kill -0 "$host"
+              sleep 1
+            done
+            if test "$mode" = private; then python3 tests/wedding_smoke.py; else python3 tests/public_smoke.py; fi
+            kill "$host"
+            wait "$host" || true
+            trap - EXIT
           done
-          python3 tests/wedding_smoke.py
-      - name: Validate automatic Let's Encrypt configuration without requesting a certificate
+      - name: Validate Caddy without requesting a certificate
         run: |
           docker run --rm -e WEDDING_DOMAIN=photos.example.test -e ADMIN_EMAIL=ci@example.invalid \
             -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
             caddy:2 caddy adapt --config /etc/caddy/Caddyfile --validate > /tmp/caddy.json
           python3 - <<'PY'
           import json
-          config = json.load(open('/tmp/caddy.json'))
-          text = json.dumps(config)
+          text = json.dumps(json.load(open('/tmp/caddy.json')))
           assert 'https://acme-v02.api.letsencrypt.org/directory' in text
           assert 'max_size' not in text
-          print('PASS: automatic Let\'s Encrypt issuer configured; no proxy file-size ceiling.')
           PY
   production-image:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - name: Compile real Community/Core application and build native HEIC decoder
+      - name: Build real Community/Core application with embedded frontend and native decoders
         run: docker build -f Dockerfile.wedding -t memtly-wedding:test .
-      - name: Verify packaged decoder and non-root runtime
+      - name: Verify non-root runtime and packaged codecs
         run: |
-          docker run --rm --entrypoint sh memtly-wedding:test -c 'test "$(id -u)" != 0; heif-convert --version; test -s /app/wwwroot/wedding/index.html'
-      - name: Start real application and test PNG/HEIC and multi-gigabyte uploads
+          docker run --rm --entrypoint sh memtly-wedding:test -c 'test "$(id -u)" != 0; heif-convert --version; ffmpeg -version; test -s /app/wwwroot/wedding/index.html'
+      - name: Regression tests for original preservation, HEIC and multi-gigabyte uploads
         run: |
           docker run -d --name wedding-runtime -p 127.0.0.1:5089:5000 \
             -e ASPNETCORE_ENVIRONMENT=Development \
-            -e Wedding__Enabled=true -e Wedding__DevelopmentHttp=true \
+            -e Wedding__Enabled=true -e Wedding__DevelopmentHttp=true -e WeddingPublic__Enabled=false \
             -e Wedding__InviteKey=ci-only-production-image-guest-invitation-12345678 \
             -e Wedding__StoragePath=/data/wedding -e Wedding__MinFreeBytes=1048576 \
             -e Memtly__Force_Https=false \
@@ -75,24 +81,24 @@ jobs:
             -e Memtly__Security__Encryption__Key="$(openssl rand -hex 32)" \
             -e Memtly__Security__Encryption__Salt="$(openssl rand -hex 32)" \
             -e Memtly__Account__Registration__Enabled=false \
-            -e Memtly__Logging__Graylog__Enabled=false \
-            memtly-wedding:test
-          trap 'docker logs --tail 150 wedding-runtime; docker rm -f wedding-runtime' EXIT
+            -e Memtly__Logging__Graylog__Enabled=false memtly-wedding:test
+          trap 'docker logs --tail 100 wedding-runtime; docker rm -f wedding-runtime' EXIT
           python3 tests/production_runtime.py
           python3 tests/large_upload_runtime.py
+          curl -fsS http://127.0.0.1:5089/Account/Login >/dev/null
           docker cp wedding-runtime:/app/build-manifests artifacts/build-manifests
           python3 - <<'PY'
           import json, pathlib
           manifests = list(pathlib.Path('artifacts/build-manifests').glob('*.json'))
-          assert manifests, 'Missing resolved production dependency manifests'
+          assert manifests
           for path in manifests:
-              data = json.loads(path.read_text())
-              for framework, dependencies in data['dependencies'].items():
+              for framework, dependencies in json.loads(path.read_text())['dependencies'].items():
                   if 'System.Security.Cryptography.Pkcs' in dependencies:
                       assert dependencies['System.Security.Cryptography.Pkcs']['resolved'] == '10.0.13'
-                  assert 'SQLitePCLRaw.lib.e_sqlite3' not in dependencies, (path, framework)
-          print('PASS: pinned PKCS replacement and removal of vulnerable inherited SQLite native bundle.')
+                  assert 'SQLitePCLRaw.lib.e_sqlite3' not in dependencies
           PY
+      - name: Production HTTPS and real-browser public upload/admin/video/restart tests
+        run: tests/run_public_runtime.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:

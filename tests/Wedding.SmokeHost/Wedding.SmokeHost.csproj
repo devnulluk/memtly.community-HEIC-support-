@@ -5,5 +5,6 @@
     <Compile Include="../../Memtly.Community/Wedding/WeddingController.cs" Link="WeddingController.cs" />
     <Compile Include="../../Memtly.Community/Wedding/WeddingDiskSpace.cs" Link="WeddingDiskSpace.cs" />
     <Compile Include="../../Memtly.Community/Wedding/WeddingNtfy.cs" Link="WeddingNtfy.cs" />
+    <Compile Include="../../Memtly.Community/Wedding/WeddingPublic.cs" Link="WeddingPublic.cs" />
   </ItemGroup>
 </Project>
