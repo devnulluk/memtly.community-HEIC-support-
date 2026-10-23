@@ -1,0 +1,27 @@
+name: Wedding design reference
+on:
+  push:
+    branches: [feature/wedding-design-match]
+    paths: [.github/workflows/wedding-design-reference.yml, tests/capture_wedding_reference.cjs]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  reference:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          npm install --prefix /tmp/wedding-design --no-audit --no-fund playwright@1
+          node /tmp/wedding-design/node_modules/playwright/cli.js install --with-deps chromium
+          NODE_PATH=/tmp/wedding-design/node_modules node tests/capture_wedding_reference.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wedding-design-reference
+          path: design-reference/
+          retention-days: 3
