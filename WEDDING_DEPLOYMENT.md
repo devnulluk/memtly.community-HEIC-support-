@@ -1,33 +1,33 @@
 # Mark & Keziah — private wedding photo postbox
 
-**Deployment branch: `feature/wedding-guest-mode`. Do not deploy `master` or the earlier `feature/heic-originals` branch for the wedding portal.** Community pins the matching Core commit as a Git submodule. Neither master branch is changed.
+**Deploy `feature/wedding-guest-mode`, not `master` or the earlier HEIC-only branch.** Community pins its matching Core commit as a submodule. Neither master branch has been changed.
 
-## What this version does
+**Latest additions:** automatic Let's Encrypt certificates, storage-aware large-video uploads without fixed quotas, and durable ntfy upload alerts. See [upload, HTTPS and ntfy settings](WEDDING_UPLOADS_AND_NTFY.md), especially when updating an existing `.env`.
 
-Guests follow a private QR/link, optionally give a name, and upload photos/videos without accounts or an app. A protected browser cookie lets them see only that browser's uploads. The optional name is a label, never an access credential. Two people giving the same name do not gain access to each other's photographs.
+## Guest and couple experience
 
-The ivory/forest-green page uses a typographic M&K crest, serif headings, botanical flourishes and the couple's privacy wording. It has upload progress, manual retry, a thank-you panel and a private 'Your uploads' view. It does not include the original wedding website's bespoke image assets: those were not available in this repository.
+Guests follow a private QR/link, optionally give a name and upload photos/videos without an account or app. A protected cookie lets them see only their browser's uploads. The optional name is a label, never a credential: matching names do not combine identities.
 
-Wedding media lives in **a separate private collection**, not Memtly's ordinary public gallery. The couple's collection is `/Wedding/Admin`. Only Memtly users with the Admin level can list every wedding upload, mark items reviewed, download originals and export a ZIP. Marking reviewed does not publish anything. No permanent-delete button is included in this first version.
+The ivory/forest-green page uses a typographic M&K crest, serif headings, botanical flourishes and the agreed household-only sharing wording. It provides upload progress, manual retry, a thank-you panel and a private own-upload view. It is styled to match the wedding's visual language but does not contain the original website's bespoke image assets.
 
-## Before deployment
+Wedding media lives in **a separate private collection**, not Memtly's ordinary public gallery. The couple's collection is `/Wedding/Admin`. Only Memtly Admin-level users can list every upload/name, mark items reviewed, download originals or export a ZIP. Reviewed is a private checklist, not a publishing switch. No permanent-delete button is included.
 
-Use a Linux Docker host with the Docker Compose plugin, Git and OpenSSL. A dedicated VM with at least 4 GB RAM and ample storage is a sensible starting allocation; measure memory/disk use with real files. The application container has a 3 GB memory limit and runs as a non-root user. Run **one application replica only**: the on-disk metadata and admission limits are single-instance.
+## Host and networking
 
-Choose a hostname, for example `photos.newland-brown.com`. Point its DNS A record at this host. Only add AAAA when IPv6 routing also works. Allow inbound TCP 80/443; UDP 443 is optional for HTTP/3. The bundled Caddy handles HTTPS. Those ports must not already be occupied by another proxy.
+Use a Linux Docker host with the Docker Compose plugin, Git and OpenSSL. A dedicated VM with at least 4 GB RAM and ample storage is a starting allocation, not a performance guarantee. The app has a 3 GB container memory limit and runs non-root. Run **one application replica**; metadata/admission/notification coordination is single-instance.
 
-The Docker subnet `172.29.147.0/24` must not overlap an existing host/VPN/Docker network. If changing it, update both static service IPs and `Wedding__TrustedProxy` together. Do not trust arbitrary forwarded-header senders.
+Choose a hostname, for example `photos.newland-brown.com`. Its DNS A record must reach your host. Add AAAA only when IPv6 also routes correctly. The bundled Caddy needs TCP 80/443; UDP 443 is optional for HTTP/3. It explicitly uses Let's Encrypt to obtain/renew certificates and redirects HTTP to HTTPS. No Certbot or renewal cron is needed. Persist its data volume.
 
-Check the **Wedding validation** workflow on GitHub for the exact commit you will deploy. A green build is not a replacement for the two-browser and real-phone acceptance checks below. The smoke host uses test-only authentication; it is not part of the production application.
+Ports 80/443 must not already belong to another proxy. The Docker subnet `172.29.147.0/24` must not overlap another host, VPN or Docker network. Changing it requires changing both static service IPs and `Wedding__TrustedProxy` together. Do not trust arbitrary forwarded headers.
 
-## Install
+## Fresh installation
 
 ```bash
 git clone --branch feature/wedding-guest-mode --recurse-submodules \
   https://github.com/devnulluk/memtly.community-HEIC-support-.git memtly-wedding
 cd memtly-wedding
 
-# Substitute the actual hostname and an email address you control.
+# Substitute the hostname and administrator email you control.
 ./deploy/setup.sh photos.newland-brown.com wedding@newland-brown.com
 
 docker compose -f compose.wedding.yml config --quiet
@@ -36,15 +36,15 @@ docker compose -f compose.wedding.yml up -d
 docker compose -f compose.wedding.yml logs --tail=100 memtly caddy
 ```
 
-The setup script generates random credentials and `.env` with mode 600. It refuses to replace an existing `.env`. Save the printed password in your password manager. The initial Memtly **username is `admin`**, not the email address. The email is associated with that account. These credentials seed a fresh database; editing `ADMIN_PASSWORD` later does not reset an existing account's password.
+Setup generates random credentials, invitation key and ntfy topic; writes `.env` with mode 600; and refuses to overwrite an existing file. Save the password securely. The initial username is **`admin`**, not the email address. Editing `ADMIN_PASSWORD` later does not reset an existing account's password.
 
-The printed guest URL is of the form:
+It prints the complete guest URL:
 
 ```text
 https://photos.newland-brown.com/Wedding#invite=YOUR_RANDOM_SECRET
 ```
 
-Put the **entire URL including `#invite=...`** into the QR code. The fragment keeps the invite out of normal HTTP request/access logs; JavaScript exchanges it for a protected cookie and removes it from the address bar. Do not commit this link, `.env`, data, or backups to GitHub. Anyone with the invitation link can upload, but does not acquire other guests' browser identities.
+Encode the **entire printed URL, including `#invite=...`**, in the QR. JavaScript exchanges the fragment for a protected browser cookie and removes it from the address bar. The fragment keeps the invite out of ordinary HTTP/access logs. Anyone with the private link can upload, but does not gain another browser's identity. Keep it, `.env`, private media and backups out of GitHub.
 
 The couple's collection is:
 
@@ -52,54 +52,54 @@ The couple's collection is:
 https://photos.newland-brown.com/Wedding/Admin
 ```
 
-Sign in through Memtly with username `admin` and the generated password. Create a separate Admin-level account for Keziah through Memtly administration if you want distinct logins. Guest registration is disabled in the supplied deployment; guests never need it.
+Sign in through Memtly with username `admin` and the generated password. A separate Admin-level account for Keziah can be created through administration. Public guest registration is disabled in this deployment; account linking/cross-device recovery is not implemented.
 
-Do not expose the internal application port 5000 directly. Wedding media is outside all static file roots and is served through permission-checked controllers. Leave `Wedding__DevelopmentHttp` unset in production.
+Do not expose application port 5000 directly or set `Wedding__DevelopmentHttp` in production. Wedding files are outside every static-media root and are served through permission-checked routes.
 
-## Already using a reverse proxy?
+## ntfy
 
-The supplied file assumes a dedicated Caddy listener. Do not run it blindly over an existing proxy. Put your existing trusted proxy on the application network instead, remove/disable the Caddy service and host ports, set `Wedding__TrustedProxy` to that proxy's fixed IP, and forward to `memtly:5000` with the correct Host and `X-Forwarded-Proto: https`. Keep the application unreachable directly from the internet. Match upload size/timeouts and disable caching for `/Wedding/*`. Test secure cookies and authentication end-to-end. CDN/proxy request-size limits may be lower than the application limit.
+Fresh setup enables alerts to `https://ntfy.devnull.co.uk` using a separate random `wedding-media-...` topic, printed by setup and stored in `.env`. Subscribe to that exact topic in your ntfy app with your server selected. It does not reuse the router's `wedding_server` topic or change server ACLs.
 
-## Storage, originals and limits
+Each committed file queues a message containing name (when supplied/enabled), type, filename and size. Tapping opens the administrator collection, still requiring login. No media, cookies or invitation secrets are attached. Network failure never rolls back an upload: notification state is persisted with the file and retried after failures/restarts. Delivery is at-least-once, so a lost acknowledgement can cause a duplicate. A batch currently sends one alert per file.
 
-The named volumes are:
+Protect the topic with ntfy access control and put a publisher token in `NTFY_TOKEN` when required. `NTFY_INCLUDE_NAMES=false` omits names; filenames remain. Consider lock-screen visibility. HTTPS tokens stay server-side. See [the detailed guide](WEDDING_UPLOADS_AND_NTFY.md) for every setting and upgrade instructions.
 
-- `newland-brown-wedding_wedding_media`: originals, private JSON manifests, previews and temporary ZIP exports under `/data/wedding`.
-- `newland-brown-wedding_memtly_config`: Memtly's SQLite database **and Data Protection keys**. Losing these keys invalidates guest cookies even if the media remains.
-- `newland-brown-wedding_caddy_data` and `_caddy_config`: HTTPS/proxy state.
+## Original quality, capacity and transfer behaviour
 
-Defaults: 500 MiB per file, 5 GiB/1,000 uploads per anonymous browser, 50 GiB of originals in total. Browser upload queues are sequential; the server admits at most four concurrent uploads. The per-browser quota is not a per-person quota: a new browser identity gets a new allowance. The total limit still applies. Preview files, staging files and exports are additional disk usage; monitor free space and retain headroom. A ZIP export requires temporary free space roughly equal to the originals being exported. Do not run multiple large exports at once.
+Fresh defaults have no application file-size, per-browser-byte, gallery-byte or file-count quota: the MAX_* settings are zero. Positive values restore optional quotas. Existing `.env` files retain their previous caps until edited. The old 500 MiB ceiling, bundled Caddy body cap and browser's 30-minute cutoff have been removed.
 
-Change byte limits in `.env`, then recreate the application container. The 500 MiB per-file ceiling is enforced in code; lower limits are supported. Upload streams are copied directly to a private staging directory, hashed with SHA-256 and moved into place after validation. No resize, EXIF rewrite or re-encoding is applied to the original.
+The default `MIN_FREE_BYTES=10737418240` retains **10 GiB free** on the filesystem containing `/data/wedding`. At most four uploads are admitted concurrently; capacity is reserved using declared file sizes and rechecked during transfer. Files are streamed in bounded buffers, SHA-256 hashed, validated and committed from private staging without recompressing or rewriting the original. Disk-backed ZIP exports also require sufficient temporary capacity.
 
-A lost upload response can be retried from the same page without duplicating a successfully saved file. Refreshing the page loses the browser's pending upload queue; this is not resumable multipart uploading across browser restarts. Keep the page open during a batch.
+This is a safeguard, not infinite storage or an operating-system quota. Other processes, previews, filesystem metadata and logs can use space. Monitor the actual filesystem and maintain backups/headroom. External CDN/proxy limits may still reject large requests even when the application has no quota.
 
-HEIC/HEIF gets a separate WebP viewing copy. Decoding has a timeout, concurrency limit and isolated temporary directory. Previews over 64 megapixels are refused while the original stays stored. The display copy is not an HDR archival substitute. HDR/gain-map fidelity, Live Photo still/video pairing and every multi-image HEIF variant are **not** guaranteed. Some MOV/HEVC clips will not play in every browser; they remain stored unchanged.
+Retries use a stable request ID within the page to avoid duplicating an already-saved upload whose response was lost. Interrupted files restart from the beginning; uploads are not resumable across browser restarts. Keep the page open and screen awake, ideally on Wi-Fi. Idle-read/network protections still apply. Avoid deployments while guests are uploading.
 
-An iPhone's Photos picker can convert an image **before** the browser sends it. The server preserves the bytes received, not a hidden original it never received. For an unmodified-original check, export the original to Files and select it from there.
+HEIC/HEIF originals are kept separately from WebP previews. Decoding is bounded; unsupported/failed previews do not remove the stored original. Preview decoding over 64 megapixels is refused. HDR/gain-map fidelity in WebP, Live Photo pairing and all multi-image HEIF variants are not guaranteed. Some original MOV/HEVC files cannot play in every browser but remain stored.
 
-Guests who clear cookies, use private browsing or change browsers/devices lose their 'Your uploads' view; the couple still has the files. Optional names do not recover access. On a shared browser, the people using that browser share its upload identity. No cross-device account recovery/linking is implemented.
+The server preserves the bytes it receives. The iPhone Photos picker may convert before upload. Export an unmodified original to Files and upload that for an integrity check. Clearing cookies/changing devices loses a guest's view, not the couple's files. Shared browsers share an identity; names cannot recover access.
 
-## Acceptance checks before printing/sharing the QR
+## Existing reverse proxy
 
-1. On an iPhone, open the full private URL. Upload a HEIC from Files, a portrait/landscape image, a JPEG and a short video. Verify progress and the thank-you state. Check that the filename/type received is the one expected.
-2. Open the same invitation in a genuinely separate browser/profile/device. It must show none of the first browser's uploads, even with the same optional name. Visiting a copied preview/video URL from that other browser must return 404.
-3. Sign in as administrator and visit `/Wedding/Admin`. Confirm all items/names, review state, original download and ZIP export. Compare an exported original to the source with `sha256sum` or Windows `Get-FileHash -Algorithm SHA256`.
-4. Restart the application container. Reopen both guest browsers and verify their separate histories remain. This tests the persisted keys and media volume.
-5. Test invalid files and an interrupted upload. Keep the original on your phone until the site confirms it was saved. Test the actual QR on another phone before printing cards.
+Do not launch the bundled Caddy over an existing listener. Put the existing trusted proxy on the application network, omit the Caddy service/host ports, set `Wedding__TrustedProxy` to the proxy's fixed IP and forward to `memtly:5000` with the correct Host and `X-Forwarded-Proto: https`. Keep the app unreachable directly from the internet. Remove/raise that proxy's body-size/time limits and disable caching for `/Wedding/*`. Test HTTPS, cookies and uploads end-to-end. Certificate management can stay with that proxy instead.
 
-## Backups
+## Storage and backups
 
-Back up `.env`, **both application volumes**, and the deployment commit before upgrades. Keep a second copy off the server. Backups contain private wedding photographs and credentials; protect access and encrypt off-host copies.
+The volumes are:
 
-For a consistent cold backup from the repository directory (temporary upload outage):
+- `newland-brown-wedding_wedding_media`: private originals, manifests (including notification state), previews and temporary exports.
+- `newland-brown-wedding_memtly_config`: SQLite database and Data Protection keys; losing the keys invalidates guest cookies.
+- `newland-brown-wedding_caddy_data` and `_caddy_config`: certificate/proxy state.
+
+Back up `.env`, **both application volumes**, and the deployment commit before upgrades; retain an encrypted off-server copy. Do not use `docker compose down -v`, which deletes the volumes.
+
+A consistent cold backup from the repository directory causes a temporary upload outage:
 
 ```bash
 umask 077
 mkdir -p backups
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
-
 docker compose -f compose.wedding.yml stop memtly
+
 docker run --rm --user 0 --entrypoint tar \
   -v newland-brown-wedding_wedding_media:/source:ro \
   -v "$PWD/backups:/backup" newland-brown-memtly:wedding \
@@ -113,39 +113,38 @@ git rev-parse HEAD > "backups/commit-$stamp.txt"
 docker compose -f compose.wedding.yml start memtly
 ```
 
-Check each command succeeds; restart Memtly even if a backup command fails. Do not run `docker compose down -v`: that deletes the volumes. Practise restoring into a separate test deployment, not over your only copy. Orphan `.incoming-*` directories from a hard crash can be removed only while the application is stopped and after confirming they are incomplete; never delete GUID upload directories as 'cache'.
+Check command results and restart the app even if a backup command fails. Back up Caddy state as well to retain its account/certificates. Practise restoration separately, not over the only copy. Orphan `.incoming-*` directories after a hard crash should only be removed with the app stopped after confirming they are incomplete; GUID upload directories are not cache.
 
-## Updating and rollback
-
-For updates already published to this wedding branch:
+## Updates and rollback
 
 ```bash
-# Back up first, then preserve the current image for rollback.
+# Back up first; preserve the working image.
 docker image tag newland-brown-memtly:wedding newland-brown-memtly:before-update
 git pull --ff-only
 git submodule sync --recursive
 git submodule update --init --recursive
+# Existing installations: update quota/ntfy settings in .env as documented.
+docker compose -f compose.wedding.yml config --quiet
 docker compose -f compose.wedding.yml build --pull
 docker compose -f compose.wedding.yml up -d --no-deps memtly
+docker compose -f compose.wedding.yml exec caddy caddy reload --config /etc/caddy/Caddyfile
 ```
 
-Do **not** use `git submodule update --remote`: deploy the reviewed/pinned Core commit. An upstream Memtly release must be merged into a development branch, tested with this private portal and then published; syncing a fork's master does not automatically update this feature branch. Core and Community are independent repositories, and updating Core also requires updating Community's gitlink.
+Do not use `git submodule update --remote`; deploy the reviewed Core commit. An upstream release must be merged/tested on a development branch before updating this fork's wedding branch. Updating a fork's master does not automatically update a feature branch. Changes to Core also require a new pinned Community gitlink.
 
-To roll back the application image without deleting data:
+Image rollback without deleting data:
 
 ```bash
 docker image tag newland-brown-memtly:before-update newland-brown-memtly:wedding
 docker compose -f compose.wedding.yml up -d --no-build --force-recreate --no-deps memtly
 ```
 
-A future upstream database migration may also require restoring the matching database backup. Retain the original media and do not overwrite new uploads when restoring.
+A future database migration may require a matching database backup. Keep all new originals and do not overwrite them when restoring. Retain the corresponding `.env`/proxy configuration for rollback too.
 
-## Build dependencies and audit
+## Build dependencies and validation
 
-The wedding Dockerfile builds libheif 1.23.1 from its checksum-verified official release with the HEVC decoder, and tests a public HEIC fixture during the build. It does not encode HEIC.
+The image builds checksum-verified libheif 1.23.1 with HEVC decoding and tests a public fixture. The inherited dependency graph is first restored in locked mode, then isolated exact-version wedding security overrides select PKCS 10.0.13 and SQLitePCLRaw.bundle_e_sqlite3 3.0.5. The final resolved lock graphs are retained in `/app/build-manifests` and CI artifacts; upstream lockfiles remain unchanged. Review dependency advisories/manifests on updates; this is not a claim of a comprehensive security audit.
 
-The first validation build revealed vulnerable inherited `System.Security.Cryptography.Pkcs` and `SQLitePCLRaw.lib.e_sqlite3` packages. The wedding image verifies the upstream lock graph, then enables isolated exact-version overrides in `Directory.Build.targets`: PKCS 10.0.13 and SQLitePCLRaw.bundle_e_sqlite3 3.0.5. This generates a separate production dependency lock graph, copied into `/app/build-manifests` for inspection. The upstream lockfiles remain untouched; updated production transitive versions are resolved during build rather than all being checked into this branch. Review these manifests and dependency advisories when updating. Do not mistake warnings from the initial upstream baseline restore for the final runtime graph; confirm the final graph too.
+The Wedding validation workflow tests access/CSRF/identity isolation, original integrity, failure retention, ZIP export, disk reservations, ntfy retry/backoff/restart, Caddy's Let's Encrypt configuration, real application startup and PNG/HEIC previews. The size boundary test transmits 2 GiB + 1 MiB of synthetic MP4-shaped data and checks SHA-256; it is not a playable-video/real-iPhone compatibility test. Check the run result for the exact commit. Tests never request your real domain certificate or contact the live ntfy server.
 
-Official references: https://github.com/advisories/GHSA-846f-f764-76mx ; https://github.com/advisories/GHSA-2m69-gcr7-jv3q ; https://www.nuget.org/packages/SQLitePCLRaw.bundle_e_sqlite3/3.0.5 ; https://github.com/strukturag/libheif/releases/tag/v1.23.1 .
-
-This is a custom fork, not an independently audited security product. The CI smoke tests cover selected owner-isolation/CSRF/integrity behaviours; real browser, reverse-proxy and phone acceptance remains necessary before inviting guests. No DNS or live server has been changed by publishing this branch.
+Before sharing the QR, test your actual HTTPS host on an iPhone and a separate browser/device. Check a HEIC from Files, real large video, original download/hash, private collection isolation, administrator access, restart persistence and ntfy delivery. Verify the printed QR on another phone. No DNS or live server is changed by publishing this branch.
