@@ -12,18 +12,26 @@ public sealed class WeddingOptions
     public string InviteKey { get; set; } = "";
     public string StoragePath { get; set; } = "/data/wedding";
     public string TrustedProxy { get; set; } = "";
+    public string PublicUrl { get; set; } = "";
     public bool DevelopmentHttp { get; set; }
-    public long MaxFileBytes { get; set; } = 500L * 1024 * 1024;
-    public long MaxGuestBytes { get; set; } = 5L * 1024 * 1024 * 1024;
-    public long MaxTotalBytes { get; set; } = 50L * 1024 * 1024 * 1024;
-    public int MaxGuestFiles { get; set; } = 1000;
+    // Zero disables the corresponding application quota, not disk-space protection.
+    public long MaxFileBytes { get; set; }
+    public long MaxGuestBytes { get; set; }
+    public long MaxTotalBytes { get; set; }
+    public int MaxGuestFiles { get; set; }
+    public long MinFreeBytes { get; set; } = 10L * 1024 * 1024 * 1024;
     public int CookieDays { get; set; } = 180;
+    public WeddingNtfyOptions Ntfy { get; set; } = new();
     public void Validate()
     {
         if (!Enabled) return;
         if (InviteKey.Length < 32) throw new InvalidOperationException("Set Wedding__InviteKey to a random secret of at least 32 characters.");
-        if (MaxFileBytes < 1 || MaxFileBytes > 500L * 1024 * 1024 || MaxGuestBytes < MaxFileBytes || MaxTotalBytes < MaxGuestBytes || MaxGuestFiles < 1 || CookieDays is < 1 or > 365)
-            throw new InvalidOperationException("Invalid wedding upload limits.");
+        if (MaxFileBytes < 0 || MaxGuestBytes < 0 || MaxTotalBytes < 0 || MaxGuestFiles < 0 ||
+            MinFreeBytes < 1024 * 1024 || CookieDays is < 1 or > 365)
+            throw new InvalidOperationException("Wedding quotas must be non-negative (0 = no quota); retain at least 1 MiB of free-space reserve.");
+        if (!string.IsNullOrEmpty(PublicUrl) && !WeddingNtfyOptions.ValidServer(PublicUrl, DevelopmentHttp))
+            throw new InvalidOperationException("Wedding:PublicUrl must be an HTTPS base URL without credentials, query or fragment.");
+        Ntfy.Validate(DevelopmentHttp);
     }
 }
 
@@ -71,7 +79,9 @@ public sealed class WeddingSession
 public sealed record WeddingItem(
     string Id, string Owner, string RequestId, string Filename, string Extension,
     string Name, long Bytes, string Sha256, DateTimeOffset UploadedUtc,
-    string Preview = "pending", bool Reviewed = false)
+    string Preview = "pending", bool Reviewed = false,
+    string Notification = "disabled", int NotificationAttempts = 0,
+    DateTimeOffset? NotifyAfter = null, DateTimeOffset? NotifiedUtc = null)
 {
     public bool IsVideo => Extension is ".mp4" or ".mov";
 }
@@ -89,9 +99,16 @@ public sealed class WeddingStore
     private readonly object manifests = new();
     private readonly Dictionary<string, (string Owner, long Bytes)> active = new();
     public string Root => Path.GetFullPath(options.StoragePath);
+    public WeddingDiskSpace Space { get; }
     private static readonly HashSet<string> Extensions = new(StringComparer.OrdinalIgnoreCase)
         { ".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".mp4", ".mov" };
-    public WeddingStore(WeddingOptions options) { this.options = options; if (options.Enabled) Directory.CreateDirectory(Root); }
+    public WeddingStore(WeddingOptions options) : this(options, new WeddingDiskSpace(options.StoragePath, options.MinFreeBytes)) { }
+    internal WeddingStore(WeddingOptions options, WeddingDiskSpace space)
+    {
+        this.options = options;
+        Space = space;
+        if (options.Enabled) Directory.CreateDirectory(Root);
+    }
     public static bool ValidId(string id) => Guid.TryParseExact(id, "N", out _);
     public string Folder(string id) => ValidId(id) ? Path.Combine(Root, id) : throw new ArgumentException("Invalid upload ID.");
     public string Original(WeddingItem item) => Path.Combine(Folder(item.Id), "original" + item.Extension);
@@ -131,28 +148,35 @@ public sealed class WeddingStore
         name = new string(name.Where(c => !char.IsControl(c)).ToArray()).Trim();
         if (name.Length > 80) throw new WeddingUploadException(400, "Please keep your name to 80 characters.");
         if (!ValidId(requestId)) throw new WeddingUploadException(400, "Missing upload request ID.");
-        var reservation = contentLength ?? options.MaxFileBytes;
-        if (reservation < 1 || reservation > options.MaxFileBytes) throw new WeddingUploadException(413, "This file is larger than the upload limit.");
+        // Even a chunked transfer must declare its file length using X-File-Size.
+        // This is a reservation, not trust: the exact byte count is checked below.
+        if (contentLength is not > 0) throw new WeddingUploadException(411, "Please provide the file size before uploading.");
+        var reservation = contentLength.Value;
+        if (options.MaxFileBytes > 0 && reservation > options.MaxFileBytes)
+            throw new WeddingUploadException(413, "This file is larger than the configured upload limit.");
         var requestKey = owner + ":" + requestId;
+        WeddingDiskSpace.Reservation disk;
         lock (admission)
         {
             var all = All();
             var previous = all.FirstOrDefault(i => i.Owner == owner && i.RequestId == requestId);
             if (previous != null)
             {
-                if (previous.Filename != filename || (contentLength.HasValue && previous.Bytes != contentLength.Value))
+                if (previous.Filename != filename || previous.Bytes != reservation)
                     throw new WeddingUploadException(409, "This upload ID has already been used for a different file.");
                 return previous;
             }
             if (active.Count >= 4 || active.ContainsKey(requestKey)) throw new WeddingUploadException(429, "The photo postbox is busy. Please retry this file in a moment.");
             var own = all.Where(i => i.Owner == owner).ToList();
-            if (own.Count + active.Values.Count(v => v.Owner == owner) >= options.MaxGuestFiles ||
-                own.Sum(i => i.Bytes) + active.Values.Where(v => v.Owner == owner).Sum(v => v.Bytes) + reservation > options.MaxGuestBytes)
-                throw new WeddingUploadException(413, "This browser has reached its upload allowance. Please contact Mark or Keziah.");
-            if (all.Sum(i => i.Bytes) + active.Values.Sum(v => v.Bytes) + reservation > options.MaxTotalBytes)
-                throw new WeddingUploadException(507, "Our photo postbox is full. Please let Mark or Keziah know.");
+            if ((options.MaxGuestFiles > 0 && own.Count + active.Values.Count(v => v.Owner == owner) >= options.MaxGuestFiles) ||
+                (options.MaxGuestBytes > 0 && own.Sum(i => (decimal)i.Bytes) + active.Values.Where(v => v.Owner == owner).Sum(v => (decimal)v.Bytes) + reservation > options.MaxGuestBytes))
+                throw new WeddingUploadException(413, "This browser has reached its configured upload allowance. Please contact Mark or Keziah.");
+            if (options.MaxTotalBytes > 0 && all.Sum(i => (decimal)i.Bytes) + active.Values.Sum(v => (decimal)v.Bytes) + reservation > options.MaxTotalBytes)
+                throw new WeddingUploadException(507, "Our photo postbox has reached its configured allowance. Please let Mark or Keziah know.");
+            disk = Space.Reserve(reservation);
             active.Add(requestKey, (owner, reservation));
         }
+        using var diskReservation = disk;
         var id = Guid.NewGuid().ToString("N");
         var staging = Path.Combine(Root, ".incoming-" + id);
         try
@@ -160,29 +184,41 @@ public sealed class WeddingStore
             Directory.CreateDirectory(staging);
             var target = Path.Combine(staging, "original" + extension);
             using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-            long length = 0;
+            using var readTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+            long length = 0, sinceSpaceCheck = 0;
             var buffer = new byte[64 * 1024];
             await using (var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None, buffer.Length, FileOptions.Asynchronous))
             {
                 while (true)
                 {
-                    var count = await input.ReadAsync(buffer, cancellation);
+                    readTimeout.CancelAfter(TimeSpan.FromMinutes(2));
+                    int count;
+                    try { count = await input.ReadAsync(buffer, readTimeout.Token); }
+                    catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
+                    { throw new WeddingUploadException(408, "The connection stopped sending data. Please retry this file."); }
+                    finally { readTimeout.CancelAfter(Timeout.InfiniteTimeSpan); }
                     if (count == 0) break;
-                    length += count;
-                    if (length > reservation) throw new WeddingUploadException(413, "This file exceeded its upload allowance.");
+                    if (count > reservation - length) throw new WeddingUploadException(413, "This file exceeded its declared size.");
+                    if (sinceSpaceCheck >= 8L * 1024 * 1024) { disk.Check(); sinceSpaceCheck = 0; }
                     hash.AppendData(buffer, 0, count);
                     await output.WriteAsync(buffer.AsMemory(0, count), cancellation);
+                    disk.Written(count);
+                    length += count;
+                    sinceSpaceCheck += count;
                 }
                 await output.FlushAsync(cancellation);
                 output.Flush(flushToDisk: true);
             }
-            if (length == 0 || (contentLength.HasValue && length != contentLength.Value)) throw new WeddingUploadException(400, "The upload was incomplete. Please retry it.");
+            if (length != reservation) throw new WeddingUploadException(400, "The upload was incomplete. Please retry it.");
+            disk.Check();
             var header = new byte[64];
-            using (var stream = File.OpenRead(target)) stream.Read(header, 0, header.Length);
+            using (var stream = File.OpenRead(target)) stream.ReadExactly(header.AsSpan(0, (int)Math.Min(length, header.Length)));
             if (!SignatureMatches(extension, header)) throw new WeddingUploadException(415, "The file contents do not match its photo or video extension.");
             var item = new WeddingItem(id, owner, requestId, filename, extension, name, length,
                 Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant(), DateTimeOffset.UtcNow,
-                extension is ".mp4" or ".mov" ? "video" : "pending");
+                Preview: extension is ".mp4" or ".mov" ? "video" : "pending",
+                Notification: options.Ntfy.Enabled ? "pending" : "disabled");
+            // The notification outbox is committed with the upload, never sent in this request.
             await File.WriteAllTextAsync(Path.Combine(staging, "upload.json"), JsonSerializer.Serialize(item), cancellation);
             Directory.Move(staging, Folder(id));
             return item;

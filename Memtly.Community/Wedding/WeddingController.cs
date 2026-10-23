@@ -1,7 +1,9 @@
+using System.Globalization;
 using System.IO.Compression;
 using System.Text.Json;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Timeouts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
@@ -75,7 +77,8 @@ public sealed class WeddingController(WeddingStore store, WeddingSession session
     private object PublicItem(WeddingItem i) => new { id = i.Id, filename = i.Filename, name = i.Name, bytes = i.Bytes,
         sha256 = i.Sha256, uploadedUtc = i.UploadedUtc, preview = i.Preview, video = i.IsVideo, reviewed = i.Reviewed };
 
-    [HttpPost("Upload"), ValidateAntiForgeryToken, RequestSizeLimit(524288000)]
+    // Override Kestrel only for this streamed action, not other Memtly endpoints.
+    [HttpPost("Upload"), ValidateAntiForgeryToken, DisableRequestSizeLimit, DisableRequestTimeout]
     public async Task<IActionResult> Upload()
     {
         var owner = Owner;
@@ -85,7 +88,16 @@ public sealed class WeddingController(WeddingStore store, WeddingSession session
             var filename = Uri.UnescapeDataString(Request.Headers["X-File-Name"].ToString());
             var name = Uri.UnescapeDataString(Request.Headers["X-Guest-Name"].ToString());
             var id = Request.Headers["X-Upload-ID"].ToString();
-            var item = await store.Save(Request.Body, filename, name, owner, id, Request.ContentLength, HttpContext.RequestAborted);
+            var length = Request.ContentLength;
+            var declared = Request.Headers["X-File-Size"].ToString();
+            if (!string.IsNullOrEmpty(declared))
+            {
+                if (!long.TryParse(declared, NumberStyles.None, CultureInfo.InvariantCulture, out var bytes) || bytes <= 0 ||
+                    (length.HasValue && length.Value != bytes))
+                    return BadRequest(new { error = "The declared file size is invalid or does not match the request." });
+                length = bytes;
+            }
+            var item = await store.Save(Request.Body, filename, name, owner, id, length, HttpContext.RequestAborted);
             return Json(new { success = true, item = PublicItem(item) });
         }
         catch (WeddingUploadException ex) { if (ex.Status == 429) Response.Headers["Retry-After"] = "5"; return StatusCode(ex.Status, new { error = ex.Message }); }
@@ -155,30 +167,50 @@ public sealed class WeddingController(WeddingStore store, WeddingSession session
     public async Task<IActionResult> Export()
     {
         if (!Admin) return Forbid();
-        // Use a disk-backed archive rather than buffering all wedding photographs in RAM.
-        var directory = Path.Combine(store.Root, ".exports");
-        Directory.CreateDirectory(directory);
-        var path = Path.Combine(directory, Guid.NewGuid().ToString("N") + ".zip");
-        var stream = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 65536, FileOptions.Asynchronous | FileOptions.DeleteOnClose);
+        FileStream? stream = null;
         try
         {
             var items = store.All();
+            // Reserve temporary ZIP capacity as well as originals; large libraries
+            // must not bypass the free-space floor through an administrator export.
+            var required = items.Sum(i => (decimal)i.Bytes) + (decimal)(items.Count + 1) * 65536;
+            if (required > long.MaxValue) throw new WeddingUploadException(507, "This collection is too large for a single ZIP export.");
+            using var disk = store.Space.Reserve((long)required);
+            var directory = Path.Combine(store.Root, ".exports");
+            Directory.CreateDirectory(directory);
+            var path = Path.Combine(directory, Guid.NewGuid().ToString("N") + ".zip");
+            stream = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 65536, FileOptions.Asynchronous | FileOptions.DeleteOnClose);
             using (var zip = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
             {
+                var buffer = new byte[65536];
+                long sinceCheck = 0;
                 foreach (var item in items)
                 {
                     var entry = zip.CreateEntry(item.Id + "/" + item.Filename, CompressionLevel.NoCompression);
                     using var output = entry.Open();
                     await using var original = System.IO.File.OpenRead(store.Original(item));
-                    await original.CopyToAsync(output, HttpContext.RequestAborted);
+                    int count;
+                    while ((count = await original.ReadAsync(buffer, HttpContext.RequestAborted)) > 0)
+                    {
+                        if (sinceCheck >= 8L * 1024 * 1024) { disk.Check(); sinceCheck = 0; }
+                        await output.WriteAsync(buffer.AsMemory(0, count), HttpContext.RequestAborted);
+                        disk.Written(count);
+                        sinceCheck += count;
+                    }
                 }
                 var manifest = zip.CreateEntry("upload-index.json");
                 using var metadata = manifest.Open();
                 await JsonSerializer.SerializeAsync(metadata, items.Select(PublicItem), cancellationToken: HttpContext.RequestAborted);
             }
+            disk.Check();
             stream.Position = 0;
             return File(stream, "application/zip", "Mark-and-Keziah-wedding-originals.zip");
         }
-        catch { await stream.DisposeAsync(); throw; }
+        catch (WeddingUploadException ex)
+        {
+            if (stream != null) await stream.DisposeAsync();
+            return StatusCode(ex.Status, new { error = ex.Message });
+        }
+        catch { if (stream != null) await stream.DisposeAsync(); throw; }
     }
 }

@@ -5,7 +5,7 @@
   const queue = [];
   let state, running = false, page = 0, pages = 0, collectionOpen = adminMode, poll;
   const make = (tag, text, cls) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (cls) node.className = cls; return node; };
-  const size = bytes => bytes < 1048576 ? `${Math.ceil(bytes / 1024)} KB` : `${(bytes / 1048576).toFixed(1)} MB`;
+  const size = bytes => bytes >= 1073741824 ? `${(bytes / 1073741824).toFixed(2)} GiB` : bytes < 1048576 ? `${Math.ceil(bytes / 1024)} KiB` : `${(bytes / 1048576).toFixed(1)} MiB`;
   function notify(message) { $('notice').textContent = message; $('notice').hidden = !message; }
   async function api(path, body) {
     const response = await fetch('/Wedding/' + path, {
@@ -28,7 +28,6 @@
     if (uploads) { page = 0; load(); }
   }
   async function initialise() {
-    // The invitation stays out of HTTP requests, referrers and server access logs.
     const invitation = new URLSearchParams(location.hash.slice(1)).get('invite');
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
     try {
@@ -38,7 +37,9 @@
         state = await api('Session');
       }
       $('admin-link').hidden = !state.admin;
-      $('file-limit').textContent = `Up to ${Math.floor(state.maxFileBytes / 1048576)} MB per file.`;
+      $('file-limit').textContent = state.maxFileBytes > 0
+        ? `Up to ${size(state.maxFileBytes)} per file.`
+        : 'Full-quality videos welcome. No fixed file-size cap, subject to available storage.';
       if (adminMode) {
         $('privacy').hidden = true;
         $('heading').replaceChildren(make('span', 'Every memory,'), document.createElement('br'), make('em', 'safely kept.'));
@@ -69,8 +70,8 @@
       const progress = document.createElement('progress'); progress.max = 100; progress.value = 0; progress.setAttribute('aria-label', `Upload progress for ${file.name}`);
       li.append(title, status, progress); $('queue').append(li);
       const item = { file, id: crypto.randomUUID().replace(/-/g, ''), status, progress, state: 'queued', name: $('guest-name').value.trim() };
-      if (!/\.(jpe?g|png|webp|heic|heif|mp4|mov)$/i.test(file.name) || !file.size || file.size > state.maxFileBytes) {
-        item.state = 'invalid'; status.textContent = 'Not sent: unsupported file type, empty file, or above the size limit.'; status.classList.add('failed');
+      if (!/\.(jpe?g|png|webp|heic|heif|mp4|mov)$/i.test(file.name) || !file.size || (state.maxFileBytes > 0 && file.size > state.maxFileBytes)) {
+        item.state = 'invalid'; status.textContent = 'Not sent: unsupported file type, empty file, or above the configured size limit.'; status.classList.add('failed');
       }
       queue.push(item);
     }
@@ -91,7 +92,9 @@
       xhr.setRequestHeader('X-File-Name', encodeURIComponent(item.file.name));
       xhr.setRequestHeader('X-Guest-Name', encodeURIComponent(item.name));
       xhr.setRequestHeader('X-Upload-ID', item.id);
-      xhr.timeout = 30 * 60 * 1000;
+      xhr.setRequestHeader('X-File-Size', String(item.file.size));
+      // No wall-clock cutoff for large videos. The server retains idle protections.
+      xhr.timeout = 0;
       xhr.upload.onprogress = e => { if (e.lengthComputable) { item.progress.value = Math.round(e.loaded / e.total * 100); item.status.textContent = item.progress.value === 100 ? 'Checking and saving…' : `Uploading · ${item.progress.value}%`; } };
       xhr.onload = () => {
         let data; try { data = JSON.parse(xhr.responseText); } catch (_) {}
@@ -99,7 +102,6 @@
         else reject(new Error(data?.error || 'Not confirmed. Your file is still on your device; please retry.'));
       };
       xhr.onerror = xhr.ontimeout = xhr.onabort = () => reject(new Error('Connection interrupted. Please retry this file when you’re connected.'));
-      // Send the File itself: no canvas, resizing, client conversion or re-encoding.
       xhr.send(item.file);
     });
   }

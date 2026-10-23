@@ -11,10 +11,18 @@ services:
       Wedding__Enabled: "true"
       Wedding__InviteKey: ${WEDDING_INVITE_KEY:?Run deploy/setup.sh first}
       Wedding__StoragePath: /data/wedding
+      Wedding__PublicUrl: https://${WEDDING_DOMAIN:?Set WEDDING_DOMAIN}
       Wedding__TrustedProxy: 172.29.147.2
-      Wedding__MaxFileBytes: ${MAX_FILE_BYTES:-524288000}
-      Wedding__MaxGuestBytes: ${MAX_GUEST_BYTES:-5368709120}
-      Wedding__MaxTotalBytes: ${MAX_TOTAL_BYTES:-53687091200}
+      Wedding__MaxFileBytes: ${MAX_FILE_BYTES:-0}
+      Wedding__MaxGuestBytes: ${MAX_GUEST_BYTES:-0}
+      Wedding__MaxTotalBytes: ${MAX_TOTAL_BYTES:-0}
+      Wedding__MaxGuestFiles: ${MAX_GUEST_FILES:-0}
+      Wedding__MinFreeBytes: ${MIN_FREE_BYTES:-10737418240}
+      Wedding__Ntfy__Enabled: ${NTFY_ENABLED:-false}
+      Wedding__Ntfy__Server: ${NTFY_SERVER:-https://ntfy.devnull.co.uk}
+      Wedding__Ntfy__Topic: ${NTFY_TOPIC:-}
+      Wedding__Ntfy__Token: ${NTFY_TOKEN:-}
+      Wedding__Ntfy__IncludeGuestName: ${NTFY_INCLUDE_NAMES:-true}
       Memtly__Base_Url: https://${WEDDING_DOMAIN:?Set WEDDING_DOMAIN}
       Memtly__Force_Https: "true"
       Memtly__Account__Admin__Email: ${ADMIN_EMAIL:?Set ADMIN_EMAIL}
@@ -30,7 +38,6 @@ services:
     volumes:
       - memtly_config:/app/config
       - wedding_media:/data/wedding
-    # Only Caddy can reach the application; no public/host port bypass.
     networks:
       wedding:
         ipv4_address: 172.29.147.3

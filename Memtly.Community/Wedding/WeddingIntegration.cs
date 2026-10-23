@@ -31,6 +31,7 @@ public static class WeddingIntegration
         services.AddScoped<IWeddingPreview, MemtlyWeddingPreview>();
         services.AddScoped<WeddingGuard>();
         services.AddHostedService<WeddingPreviewWorker>();
+        services.AddWeddingNtfy();
         services.AddAntiforgery(o =>
         {
             o.HeaderName = "X-Wedding-CSRF";
@@ -41,7 +42,6 @@ public static class WeddingIntegration
         });
         if (options.Enabled)
         {
-            // Do not inherit the upstream near-2GB in-memory multipart threshold.
             services.PostConfigure<FormOptions>(o => o.MemoryBufferThreshold = 64 * 1024);
             services.PostConfigure<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme, o =>
             {
@@ -53,7 +53,6 @@ public static class WeddingIntegration
             {
                 o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
                 o.ForwardLimit = 1;
-                // Trust ONLY the reverse proxy specified by the operator, never every network.
                 if (!string.IsNullOrWhiteSpace(options.TrustedProxy))
                     o.KnownProxies.Add(IPAddress.Parse(options.TrustedProxy));
             });

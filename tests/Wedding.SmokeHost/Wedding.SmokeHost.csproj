@@ -3,5 +3,7 @@
   <ItemGroup>
     <Compile Include="../../Memtly.Community/Wedding/WeddingServices.cs" Link="WeddingServices.cs" />
     <Compile Include="../../Memtly.Community/Wedding/WeddingController.cs" Link="WeddingController.cs" />
+    <Compile Include="../../Memtly.Community/Wedding/WeddingDiskSpace.cs" Link="WeddingDiskSpace.cs" />
+    <Compile Include="../../Memtly.Community/Wedding/WeddingNtfy.cs" Link="WeddingNtfy.cs" />
   </ItemGroup>
 </Project>

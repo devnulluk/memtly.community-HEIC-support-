@@ -1,5 +1,7 @@
 {
     email {$ADMIN_EMAIL}
+    # Obtain and renew public certificates automatically with Let's Encrypt.
+    acme_ca https://acme-v02.api.letsencrypt.org/directory
 }
 {$WEDDING_DOMAIN} {
     encode zstd gzip
@@ -9,8 +11,7 @@
         X-Content-Type-Options "nosniff"
         Strict-Transport-Security "max-age=31536000"
     }
-    request_body {
-        max_size 524288000
-    }
+    # Do not impose a proxy body-size cap. Wedding uploads are streamed and
+    # admitted by available disk space; optional quotas are enforced by the app.
     reverse_proxy memtly:5000
 }
