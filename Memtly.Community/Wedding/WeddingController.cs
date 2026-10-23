@@ -36,13 +36,12 @@ public sealed class WeddingGuard(WeddingOptions options, WeddingPublicOptions pu
                     !actual.GetLeftPart(UriPartial.Authority).Equals(new Uri(expected).GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase))))
             { context.Result = new ObjectResult(new { error = "Please upload from our wedding website." }) { StatusCode = 403 }; return; }
         }
-        // Resource filters run before action bodies; upload limits are applied before reading bytes.
         if (!publicOptions.Enabled) { await next(); return; }
         var leases = new List<RateLimitLease>();
         try
         {
             leases.Add(limits.Read(http));
-            var action = context.ActionDescriptor.RouteValues.GetValueOrDefault("action");
+            context.ActionDescriptor.RouteValues.TryGetValue("action", out var action);
             if (action == "Session" && session.Owner(http) == null) leases.Add(limits.Session(http));
             if (action == "Upload")
             {
@@ -125,8 +124,10 @@ public sealed class WeddingController(WeddingStore store, WeddingSession session
     private IActionResult Listing(IEnumerable<WeddingItem> source, int page, bool guest)
     {
         var items = source.ToList();
+        var settings = publicState.Read();
         page = Math.Clamp(page, 0, 100000);
         return Json(new { total = items.Count, page, pages = (items.Count + 35) / 36,
+            uploadsOpen = settings.UploadsOpen, galleryOpen = settings.GalleryOpen,
             items = items.Skip(page * 36).Take(36).Select(i => guest ? GuestItem(i) : PrivateItem(i)) });
     }
     private object GuestItem(WeddingItem i) => new
@@ -163,7 +164,6 @@ public sealed class WeddingController(WeddingStore store, WeddingSession session
                 length = bytes;
             }
             var item = await store.Save(Request.Body, filename, name, owner, id, length, HttpContext.RequestAborted);
-            // Only new explicit consent publishes a contributor name; legacy names stay private.
             if (publicOptions.Enabled && Request.Headers["X-Share-Name"] == "true" && !item.ShareName)
                 item = store.Update(item.Id, i => i with { ShareName = true });
             return Json(new { success = true, item = PrivateItem(item) });
@@ -208,7 +208,7 @@ public sealed class WeddingController(WeddingStore store, WeddingSession session
         if (item == null || !item.IsVideo) return NotFound();
         if (!publicOptions.Enabled)
             return PhysicalFile(store.Original(item), item.Extension == ".mov" ? "video/quicktime" : "video/mp4", enableRangeProcessing: true);
-        // NEVER fall back to the original in the public gallery, including on decoder failure.
+        // No master fallback in public mode, even when a viewing copy fails.
         var preview = Path.Combine(store.Folder(id), "preview.video.mp4");
         return item.VideoPreview == "ready" && System.IO.File.Exists(preview)
             ? PhysicalFile(preview, "video/mp4", enableRangeProcessing: true) : NotFound();
