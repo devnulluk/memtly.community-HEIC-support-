@@ -9,6 +9,7 @@ module.exports = async function checkWeddingTheme(page) {
     text: document.body.innerText,
     bodyFont: getComputedStyle(document.body).fontFamily,
     headingFont: getComputedStyle(document.querySelector('h1')).fontFamily,
+    framePosition: getComputedStyle(document.body,'::before').position,
     green: getComputedStyle(document.documentElement).getPropertyValue('--green').trim()
   }));
   assert(assets.images.length === 3 && assets.images.every(i=>i.ok), 'Original wedding artwork did not load');
@@ -16,6 +17,7 @@ module.exports = async function checkWeddingTheme(page) {
     assert(assets.fonts.some(f => f.name.replaceAll('"','') === family && f.status === 'loaded'), `Font not loaded: ${family}`);
   assert(assets.bodyFont.includes('Libre Baskerville') && assets.headingFont.includes('Cormorant Garamond'));
   assert.equal(assets.green, '#18372c');
+  assert.equal(assets.framePosition, 'absolute', 'Page frame must not cross content at the viewport bottom');
   assert(assets.text.includes('within your household') && assets.text.includes('wider world'));
   assert(!assets.text.includes('questionable dance moves') && !assets.text.includes('Who’s behind the camera'));
   for (const width of [320,390,1440]) {
