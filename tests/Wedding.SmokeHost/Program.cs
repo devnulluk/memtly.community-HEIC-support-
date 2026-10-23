@@ -37,7 +37,11 @@ builder.Services.AddAuthorization();
 builder.Services.AddControllersWithViews();
 var app = builder.Build();
 app.Use(async (context, next) => { if (context.Request.Path == "/") context.Request.Path = "/Wedding"; await next(); });
-app.UseStaticFiles(); app.UseAuthentication(); app.UseAuthorization(); app.MapControllers();
+app.UseStaticFiles();
+// Explicit routing after the rewrite mirrors the real Startup pipeline. Without
+// this, minimal hosting inserts routing before our middleware and root stays 404.
+app.UseRouting();
+app.UseAuthentication(); app.UseAuthorization(); app.MapControllers();
 app.Run();
 
 sealed class TestAdmin : IWeddingAdmin { public bool IsAdmin(ClaimsPrincipal user) => user.IsInRole("Admin"); }
