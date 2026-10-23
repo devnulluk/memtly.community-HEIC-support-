@@ -2,6 +2,7 @@
 (() => {
   const $ = id => document.getElementById(id);
   const adminMode = location.pathname.toLowerCase().replace(/\/$/, '') === '/wedding/admin';
+  document.body.classList.toggle('admin-view', adminMode);
   const queue = [];
   let state, running = false, page = 0, pages = 0, collectionOpen = adminMode, poll;
   const make = (tag, text, cls) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (cls) node.className = cls; return node; };
@@ -17,7 +18,7 @@
     if (!(response.headers.get('content-type') || '').includes('application/json'))
       throw new Error('Please reopen the homepage, or sign in again for the couple’s collection.');
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'That request could not be completed. Please try again.');
+    if (!response.ok) throw new Error(data.error || 'Please try again.');
     return data;
   }
   function settingsUI() {
@@ -26,7 +27,7 @@
     $('guest-name').disabled = !state.uploadsOpen;
     $('toggle-uploads').textContent = state.uploadsOpen ? 'Close uploads' : 'Reopen uploads';
     $('toggle-gallery').textContent = state.galleryOpen ? 'Close shared gallery' : 'Reopen shared gallery';
-    $('settings-status').textContent = `Uploads: ${state.uploadsOpen ? 'open' : 'closed'} · Shared gallery: ${state.galleryOpen ? 'open' : 'closed'}`;
+    $('settings-status').textContent = `Uploads: ${state.uploadsOpen ? 'open' : 'closed'} · Gallery: ${state.galleryOpen ? 'open' : 'closed'}`;
   }
   function tab(uploads) {
     collectionOpen = uploads;
@@ -44,16 +45,16 @@
       // Old invitation cards still work; public mode needs no fragment at all.
       if (invitation && !state.publicAccess) { await api('Enter', { token: invitation }); state = await api('Session'); }
       $('admin-link').hidden = !state.admin;
-      $('file-limit').textContent = state.maxFileBytes > 0 ? `Up to ${size(state.maxFileBytes)} per file.` : 'Full-quality videos welcome. No fixed file-size cap, subject to available storage.';
+      $('file-limit').textContent = state.maxFileBytes > 0 ? `Up to ${size(state.maxFileBytes)} per file.` : 'Original files welcome.';
       $('sharing-note').hidden = !state.publicAccess;
-      $('name-note').textContent = state.publicAccess ? 'A name supplied here is shown alongside this upload in the shared gallery. You can leave it blank.' : 'Your name is shown to Mark & Keziah with your uploads.';
+      $('name-note').textContent = state.publicAccess ? 'Shown with your uploads; leave blank to stay anonymous.' : 'Only the couple sees your name.';
       settingsUI();
       if (adminMode) {
         $('privacy').hidden = true;
-        $('heading').replaceChildren(make('span', 'Every memory,'), document.createElement('br'), make('em', 'safely kept.'));
+        $('heading').textContent = 'Our collection';
         $('collection-title').textContent = 'Our wedding collection';
-        $('collection-kicker').textContent = 'JUST FOR MARK & KEZIAH';
-        $('collection-note').textContent = state.publicAccess ? 'Guest viewing copies are shared while the gallery is open. Original downloads and these controls remain administrator-only.' : 'Your private collection of every guest’s uploads and untouched originals.';
+        $('collection-kicker').textContent = 'MARK & KEZIAH';
+        $('collection-note').textContent = state.publicAccess ? 'Shared previews; private originals. Hide items without deleting them.' : 'All uploads and their original files.';
         $('admin-tools').hidden = !state.admin;
         $('collection-panel').hidden = !state.admin;
         $('admin-denied').hidden = state.admin;
@@ -63,8 +64,9 @@
         $('locked').hidden = state.invited;
         if (!state.publicAccess) {
           $('uploads-tab').replaceChildren(document.createTextNode('Your uploads '), $('count'));
-          $('collection-title').textContent = 'The memories you’ve shared';
-          $('collection-note').textContent = 'Only this browser and the couple can see these uploads in invitation mode.';
+          $('view-uploads').textContent = 'View your uploads';
+          $('collection-title').textContent = 'Your uploads';
+          $('collection-note').textContent = 'Visible to this browser and the couple.';
         }
         if (state.invited) {
           try { $('guest-name').value = localStorage.getItem('wedding-optional-name') || ''; } catch (_) {}
@@ -79,13 +81,13 @@
     $('thank-you').hidden = true;
     for (const file of files) {
       const li = make('li');
-      const status = make('span', 'Waiting to upload', 'status');
+      const status = make('span', 'Waiting', 'status');
       const progress = document.createElement('progress'); progress.max = 100; progress.value = 0;
       progress.setAttribute('aria-label', `Upload progress for ${file.name}`);
       li.append(make('span', `${file.name} · ${size(file.size)}`), status, progress); $('queue').append(li);
       const item = { file, id: crypto.randomUUID().replace(/-/g, ''), status, progress, state: 'queued', name: $('guest-name').value.trim() };
       if (!/\.(jpe?g|png|webp|heic|heif|mp4|mov)$/i.test(file.name) || !file.size || (state.maxFileBytes > 0 && file.size > state.maxFileBytes)) {
-        item.state = 'invalid'; status.textContent = 'Not sent: unsupported file type, empty file, or above the configured size limit.'; status.classList.add('failed');
+        item.state = 'invalid'; status.textContent = 'Not sent: unsupported, empty or over the size limit.'; status.classList.add('failed');
       }
       queue.push(item);
     }
@@ -109,7 +111,7 @@
       xhr.setRequestHeader('X-Upload-ID', item.id);
       xhr.setRequestHeader('X-File-Size', String(item.file.size));
       xhr.timeout = 0;
-      xhr.upload.onprogress = e => { if (e.lengthComputable) { item.progress.value = Math.round(e.loaded / e.total * 100); item.status.textContent = item.progress.value === 100 ? 'Checking and saving…' : `Uploading · ${item.progress.value}%`; } };
+      xhr.upload.onprogress = e => { if (e.lengthComputable) { item.progress.value = Math.round(e.loaded / e.total * 100); item.status.textContent = item.progress.value === 100 ? 'Saving…' : `Uploading · ${item.progress.value}%`; } };
       xhr.onload = () => {
         let data; try { data = JSON.parse(xhr.responseText); } catch (_) {}
         if (xhr.status >= 200 && xhr.status < 300 && data?.success) { resolve(data); return; }
@@ -118,7 +120,7 @@
         error.retryAfter = Math.min(120, Math.max(1, Number(xhr.getResponseHeader('Retry-After')) || 5));
         reject(error);
       };
-      xhr.onerror = xhr.onabort = () => reject(new Error('Connection interrupted. Please retry when you’re connected.'));
+      xhr.onerror = xhr.onabort = () => reject(new Error('Connection interrupted. Please retry when connected.'));
       // The browser File is sent unchanged: no canvas or client-side re-encoding.
       xhr.send(item.file);
     });
@@ -131,10 +133,10 @@
       while ((item = queue.find(q => q.state === 'queued'))) {
         item.state = 'uploading'; item.status.classList.remove('failed');
         for (let attempt = 0; attempt < 9; attempt++) {
-          try { await upload(item); item.state = 'saved'; item.progress.value = 100; item.status.textContent = 'Saved safely ♡'; break; }
+          try { await upload(item); item.state = 'saved'; item.progress.value = 100; item.status.textContent = 'Saved ♡'; break; }
           catch (error) {
             if (error.status === 429 && attempt < 8) {
-              item.status.textContent = `The postbox is busy. Retrying in ${error.retryAfter} seconds…`;
+              item.status.textContent = `Busy — retrying in ${error.retryAfter} seconds…`;
               await pause(error.retryAfter * 1000); continue;
             }
             item.state = 'failed'; item.status.textContent = 'Not sent: ' + error.message; item.status.classList.add('failed'); break;
@@ -146,7 +148,7 @@
       $('retry-failed').hidden = !queue.some(q => q.state === 'failed');
       $('thank-you').hidden = !queue.some(q => q.state === 'saved');
       $('thank-you').querySelector('p').textContent = queue.some(q => q.state === 'failed' || q.state === 'invalid')
-        ? 'Thank you for the memories received. Some files above still need your attention.' : 'Thank you for sharing a little of our day with us.';
+        ? 'Some files still need attention above.' : 'Your memories are safely with us.';
       await load();
     }
   }
@@ -173,7 +175,7 @@
     if (item.video) { media.controls = true; media.playsInline = true; media.preload = 'metadata'; }
     else media.alt = item.filename;
     $('viewer-content').replaceChildren(media);
-    $('viewer-caption').textContent = item.video && state.publicAccess ? 'Viewing copy · up to the first two minutes. The full-quality original is kept for Mark & Keziah.' : item.filename;
+    $('viewer-caption').textContent = item.video && state.publicAccess ? 'Preview · up to two minutes. Full original kept for the couple.' : item.filename;
     $('viewer').showModal();
   }
   $('close-viewer').addEventListener('click', () => $('viewer').close());
@@ -183,14 +185,14 @@
     const button = make('button', undefined, 'thumbnail'); button.type = 'button';
     button.setAttribute('aria-label', `View ${item.filename}`);
     if (item.video && (item.preview === 'ready' || (!state.publicAccess && item.preview === 'video'))) {
-      button.append(make('span', '▷ Play viewing copy', 'placeholder')); button.addEventListener('click', () => openItem(item));
+      button.append(make('span', '▷ Play video', 'placeholder')); button.addEventListener('click', () => openItem(item));
     } else if (!item.video && item.preview === 'ready') {
       const img = document.createElement('img'); img.src = '/Wedding/Preview/' + item.id; img.alt = item.filename; img.loading = 'lazy';
-      img.onerror = () => button.replaceChildren(make('span', 'Preview unavailable. The original is safely stored.', 'placeholder'));
+      img.onerror = () => button.replaceChildren(make('span', 'Preview unavailable. Original saved.', 'placeholder'));
       button.append(img); button.addEventListener('click', () => openItem(item));
     } else {
       button.disabled = true;
-      button.append(make('span', item.preview === 'unavailable' ? 'Original safely stored. No viewing copy is available.' : 'Original safely stored. Preparing a viewing copy…', 'placeholder'));
+      button.append(make('span', item.preview === 'unavailable' ? 'No preview. Original saved.' : 'Preparing preview…', 'placeholder'));
     }
     article.append(button, make('p', item.filename, 'filename'));
     if (item.name) article.append(make('p', item.name, 'small'));
@@ -216,7 +218,7 @@
       $('count').textContent = data.total ? `(${data.total})` : '';
       $('total').textContent = `${data.total} ${data.total === 1 ? 'memory' : 'memories'}`;
       $('gallery').replaceChildren(...data.items.map(card));
-      if (!data.total) $('gallery').append(make('p', !adminMode && state.publicAccess && !state.galleryOpen ? 'The shared gallery is currently closed.' : 'The postbox is ready for its first shared memory.', 'empty'));
+      if (!data.total) $('gallery').append(make('p', !adminMode && state.publicAccess && !state.galleryOpen ? 'The gallery is currently closed.' : 'Be the first to share a memory.', 'empty'));
       $('pagination').hidden = pages < 2;
       $('page-number').textContent = `Page ${page + 1} of ${pages}`;
       $('previous').disabled = page === 0; $('next').disabled = page + 1 >= pages;

@@ -25,6 +25,7 @@ RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 WORKDIR /src
 COPY . .
+RUN node deploy/prepare-wedding-fonts.cjs
 # The manifest is an EmbeddedResource selected at MSBuild evaluation time.
 # It MUST exist before .NET evaluates/compiles Core, not merely at runtime.
 WORKDIR /src/Memtly.Core/Memtly.Core

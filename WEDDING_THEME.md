@@ -1,0 +1,11 @@
+# Wedding-site styling and shorter guest copy
+
+The guest page now reuses the original Mark & Keziah website's design: ivory `#fbfaf6`, forest green `#18372c`, warm grey hairlines, a double page border, Cormorant Garamond headings, Libre Baskerville body type, and Great Vibes script. The original wreath monogram, rose/evergreen artwork and ornate divider are reused, with small optimized WebP copies for the compact upload layout. The side floral is mirrored on the right.
+
+Source: the couple's previously supplied `wedding.zip` website archive and matching `wedding-design-styles.css`, recovered from their Library. The live reference hostname could not be resolved from the research environments on 23 October 2026, so this matches the saved original source, not a claimed fresh visual inspection of the live site. No RSVP records, private configuration, personal invitation keys or server code from that archive are copied into this public repository.
+
+The page is deliberately shorter than the invitation site's large landing page: monogram, a short title, Upload/Gallery tabs, optional name and file chooser. One household-only sharing reminder is kept. The public-name disclosure remains visible before upload; original-quality/iPhone-picker/video-preview details are consolidated under 'About your files'. The administrator controls, rate limiting, private originals and upload processing are unchanged.
+
+Fonts are downloaded from a pinned public Google Fonts repository revision during Docker image build, verified against their Git blob IDs and served from this application's origin with their OFL notices. The existing self-only CSP is unchanged, and guests make no font requests to Google or the wedding reference site. Only public licensed upstream fonts are used; no host-system font files are copied.
+
+The design is checked at mobile widths (320/390 px) and desktop, including loaded artwork/fonts, no horizontal overflow, a visible mobile file chooser, public uploading and actual administrator controls. Build and deploy using the existing `deploy/upgrade-public.sh` helper; it preserves local Compose, .env, bind storage and the previous rollback image. Publishing this commit does not update the running VPS.

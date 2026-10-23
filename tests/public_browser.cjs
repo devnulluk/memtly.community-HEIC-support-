@@ -16,6 +16,7 @@ const crypto = require('node:crypto');
     assert.equal((await a.goto(base + '/')).status(), 200);
     await a.locator('#guest:not([hidden])').waitFor();
     assert.equal(a.url(), base + '/');
+    await require('./wedding_theme_checks.cjs')(a);
     const aCookies = await alice.cookies();
     const guestCookie = aCookies.find(c => c.name === '__Host-NewlandBrownGuest');
     assert(guestCookie && guestCookie.secure && guestCookie.httpOnly && guestCookie.path === '/');
@@ -87,6 +88,7 @@ const crypto = require('node:crypto');
     await b.getByRole('button',{name:'View Wedding video'}).click();
     await b.locator('dialog[open] video').waitFor();
     await m.reload(); await m.locator('#admin-tools:not([hidden])').waitFor();
+    await m.evaluate(() => document.fonts.ready);
     await m.screenshot({path:'artifacts/wedding-admin-mobile.png', fullPage:true});
     assert.deepEqual(errors,[]);
     // Retain cookies and IDs for a restart-persistence check in the next invocation.

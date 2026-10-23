@@ -1,7 +1,7 @@
 name: Wedding validation
 on:
   push:
-    branches: [feature/wedding-guest-mode, feature/public-wedding-gallery]
+    branches: [feature/wedding-guest-mode, feature/public-wedding-gallery, feature/wedding-design-match]
   workflow_dispatch:
 permissions:
   contents: read
@@ -18,6 +18,8 @@ jobs:
         run: |
           node --check Memtly.Community/wwwroot/wedding/wedding.js
           node --check tests/public_browser.cjs
+          node --check tests/wedding_theme_checks.cjs
+          node --check deploy/prepare-wedding-fonts.cjs
           bash -n deploy/setup.sh tests/run_public_runtime.sh
       - name: Test disk safeguards and durable ntfy delivery
         run: dotnet run --project tests/Wedding.FeatureTests -c Release
@@ -97,7 +99,7 @@ jobs:
                       assert dependencies['System.Security.Cryptography.Pkcs']['resolved'] == '10.0.13'
                   assert 'SQLitePCLRaw.lib.e_sqlite3' not in dependencies
           PY
-      - name: Production HTTPS and real-browser public upload/admin/video/restart tests
+      - name: Production HTTPS, wedding design and real-browser public upload/admin/video/restart tests
         run: tests/run_public_runtime.sh
       - uses: actions/upload-artifact@v4
         if: always()
