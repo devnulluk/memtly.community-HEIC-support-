@@ -42,6 +42,7 @@ done
 docker cp wedding-test-proxy:/data/caddy/pki/authorities/local/root.crt /tmp/wedding-ci-root.crt >/dev/null
 curl --noproxy '*' --cacert /tmp/wedding-ci-root.crt -fsS https://wedding.test:5443/ >/dev/null
 curl --noproxy '*' --cacert /tmp/wedding-ci-root.crt -fsS https://wedding.test:5443/Account/Login >/dev/null
+python3 tests/social_preview.py --base-url https://wedding.test:5443 --ca-file /tmp/wedding-ci-root.crt | tee artifacts/social-preview-checks.txt
 python3 - <<'PY'
 import struct, zlib, pathlib
 def chunk(name, data): return struct.pack('>I',len(data))+name+data+struct.pack('>I',zlib.crc32(name+data))
